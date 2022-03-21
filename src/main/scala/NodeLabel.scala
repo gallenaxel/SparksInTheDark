@@ -43,13 +43,45 @@ case class NodeLabel(lab : BigInt) extends Serializable {
     Stream.iterate(this)({_.parent}).takeWhile(_.lab >= rootLabel).tail
 
   def depth() : Depth = lab.bitLength - 1
+
+  /**
+    * Ancestor at level `toDepth`
+    */
   def truncate(toDepth : Depth) : NodeLabel = {
     val fromDepth = depth()
     if(toDepth >= fromDepth) this else ancestor(fromDepth - toDepth)
   }
 
-  def lefts() : Stream[Boolean] = ((0 to depth()) map (lab.testBit(_))).toStream
-  def rights() : Stream[Boolean] = ((0 to depth()) map (!lab.testBit(_))).toStream
+  /**
+    * Path to node, appended by `false`
+    * 
+    * Ex. `NodeLabel(5).rights = Stream(false, true, false)`
+    * ```
+    *   0
+    *    \
+    *     1
+    *    / \
+    *   2   3
+    *  / \
+    * 4   5
+    * ```
+    */
+  def lefts() : Stream[Boolean] = ((0 to depth()) map (!lab.testBit(_))).toStream
+  /**
+    * Path to node, appended by `true`
+    * 
+    * Ex. `NodeLabel(5).rights = Stream(true, false, true)`
+    * ```
+    *   0
+    *    \
+    *     1
+    *    / \
+    *   2   3
+    *  / \
+    * 4   5
+    * ```
+    */
+  def rights() : Stream[Boolean] = ((0 to depth()) map (lab.testBit(_))).toStream
 
   // Auxiliary stuff
   def invert() : NodeLabel =
@@ -71,6 +103,9 @@ case class NodeLabel(lab : BigInt) extends Serializable {
 object NodeLabelFunctions {
   val rootLabel : NodeLabel = NodeLabel(1)
 
+  /**
+    * Closest common ancestor
+    */
   def join(a : NodeLabel, b : NodeLabel) : NodeLabel = {
     val d = min(a.depth, b.depth)
     val aT = a.truncate(d)
