@@ -1,3 +1,7 @@
 .metals
 .vscode
 .bloop
+.bsp
+.ammonite
+project
+target
