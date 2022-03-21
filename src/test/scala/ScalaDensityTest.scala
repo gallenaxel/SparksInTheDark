@@ -21,6 +21,8 @@ import co.wiklund.disthist.SpatialTreeFunctions._
 import co.wiklund.disthist.SplitEstimatorFunctions._
 import co.wiklund.disthist.BinarySearchFunctions._
 import co.wiklund.disthist.UnfoldTreeFunctions._
+import co.wiklund.disthist.TruncationOperations._
+import co.wiklund.disthist.LeafMapOperations._
 
 
 class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
@@ -800,8 +802,6 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val bads = leaves2.filter(lab1 => !leaves1.exists(lab2 => lab2 == lab1 || isAncestorOf(lab2, lab1))).toSet
     assert(bads.isEmpty)
   }
-
-
   // it should "never backtrack beyond goal" in {
   //   def prio1(lab : NodeLabel, c : Count, v : Volume) : (Count, BigInt) = (c, lab.lab)
   //   def prio(lab : NodeLabel, c : Count, v : Volume) : Count =
@@ -828,4 +828,50 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
   //   assert(l.truncation.leaves === supportCarvedH.truncation.leaves)
   //   assert(l.counts.vals === supportCarvedH.counts.vals)
   // }
+}
+
+class OperationTests extends FlatSpec with Matchers {
+  "rpUnion" should "generate only the leaves of the unioned tree" in {
+    val nodes1 = Vector(8,9,5,3).map(NodeLabel(_))
+    val trunc1 = Truncation(nodes1)
+    val nodes2 = Vector(4,10,11,3).map(NodeLabel(_))
+    val trunc2 = Truncation(nodes2)
+    val unioned = rpUnion(trunc1, trunc2)
+    val expectedLeaves = Vector(8,9,10,11,3)
+    assert(unioned.leaves.map(_.lab) === expectedLeaves)
+  }
+
+  "mrpTransform" should "be a pointwise transformation" in {
+    val trunc = Truncation(Vector(8,9,10,11,3).map(NodeLabel(_)))
+    val vals = Vector(1,2,3,4,5)
+    val leafMap = LeafMap(trunc, vals)
+    assert(mrpTransform(leafMap, (x: Int) => x * 2).toMap.apply(NodeLabel(10)) === 6)
+  }
+
+  "mrpOperate" should "generate the correct tree" in {
+    val nodes1 = Vector(8,9,5,3).map(NodeLabel(_))
+    val trunc1 = Truncation(nodes1)
+    val vals1 = Vector(0.1, 0.2, 0.3, 0.4)
+    val leafMap1 = LeafMap(trunc1, vals1)
+
+    val nodes2 = Vector(4,10,11,3).map(NodeLabel(_))
+    val trunc2 = Truncation(nodes2)
+    val vals2 = Vector(0.4, 0.3, 0.2, 0.1)
+    val leafMap2 = LeafMap(trunc2, vals2)
+
+    val op = (x: Double, y: Double) => (x + y) / 2
+
+    val expectedTrunc = Truncation(Vector(8,9,10,11,3).map(NodeLabel(_)))
+    val expectedVals = Vector(0.25, 0.3, 0.3, 0.25, 0.25)
+
+    val result = mrpOperate(leafMap1, leafMap2, op)
+    val result2 = mrpOperate(leafMap2, leafMap1, op)
+    assert(result === result2)
+    assert(result.truncation === expectedTrunc)
+    assert(result.vals.zip(expectedVals).forall{ case (x,y) => math.abs(x - y) < 1e-10})
+  }
+
+  "marginalize" should "work as expected" in {
+
+  }
 }
