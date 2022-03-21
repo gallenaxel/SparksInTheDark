@@ -5,3 +5,4 @@
 .ammonite
 project
 target
+*.worksheet.sc
