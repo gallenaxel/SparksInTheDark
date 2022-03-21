@@ -7,6 +7,7 @@ import NodeLabelFunctions._
 import TruncationOperations._
 import LeafMapFunctions._
 import LeafMapOperations._
+import SpatialTreeFunctions._
 import Types._
 
 object TruncationOperations {
@@ -101,10 +102,56 @@ object HistogramOperations {
     DensityHistogram(tree, fromNodeLabelMap(densitiesWithVolumes))
   }
 
-  def marginalize(hist: Histogram, keptAxes: Vector[Axis]): Histogram = {
-    val leaves = hist.counts.truncation.leaves
-    
+  def marginalize(hist: Histogram, axesToKeep: Vector[Axis]): DensityHistogram = {
+    val densHist = toDensityHistogram(hist)
 
-    ???
+    val densTree = densHist.tree
+    val densAndVols = densHist.densityMap
+
+    def marginalizeRectangle(rec: Rectangle, axesToKeep: Vector[Int]): Rectangle = {
+      Rectangle(axesToKeep map rec.low, axesToKeep map rec.high)
+    }
+
+    def getSplitDirections(lab: NodeLabel): Vector[Int] = {
+      (0 to lab.depth - 1).toVector.map(lab.lab.testBit).map(if (_) 1 else 0)
+    }
+
+    val splits = densTree.splits
+
+    val marginalized = densAndVols.toIterable.groupBy{ case (lab, _) => 
+      // group by box with unwanted axes removed
+      marginalizeRectangle(densTree.cellAt(lab), axesToKeep)
+    }.map{ case (newRec, densities) => 
+      val newVol = newRec.volume
+      val newDensity = densities.map { case (_, (dens, vol)) =>
+        dens * vol / newVol
+      }.sum 
+      val newLabel = {
+        val oldLab = densities.head._1
+        val axisSplits = splits.take(oldLab.depth)
+        val splitDirections = getSplitDirections(oldLab)
+        val newDirections = axisSplits.zip(splitDirections).filter{ case (axis, _) =>
+          axesToKeep.contains(axis)
+        }.map{ case (_, direction) => direction }
+        NodeLabel(newDirections.reverse.foldLeft(BigInt(1)){ case (labAcc, i) => (labAcc << 1) + i })
+      } 
+      (newRec, (newLabel, newDensity, newVol))
+    }.map{ case(rec, (lab, dens, vol)) => (lab, (dens: Probability, vol)) }
+
+    val margTree = widestSideTreeRootedAt(marginalizeRectangle(densTree.rootCell, axesToKeep))
+
+    val ancToDescs = marginalized.keys.toVector.flatMap(node => (1 to node.depth-1).reverse.map(i => (node, node.truncate(i)))).groupBy(_._2).mapValues(_.map(_._1))
+    val ancToDescsWithMissing = ancToDescs.mapValues(descs => descs.union(descs.map(_.sibling)).distinct)
+
+    val descsWithDens = ancToDescsWithMissing.toVector.flatMap{ case (anc, descs) => descs.map(desc => (desc, marginalized.getOrElse(anc, (0.0, 0.0))._1)) }.groupBy{ case (lab, dens) => lab }.mapValues( labAndDens => labAndDens.map(_._2).sum)
+
+    val margMap = descsWithDens.keys.foldLeft(marginalized){
+      case (mapAcc, descLab) =>
+        val oldValue = mapAcc.getOrElse(descLab, (0.0, margTree.volumeAt(descLab)))
+        val newValue = (oldValue._1 + descsWithDens(descLab), oldValue._2)
+        mapAcc.updated(descLab, newValue)
+    }.filter{ case (lab, _) => !ancToDescs.keySet.contains(lab) }
+
+    DensityHistogram(margTree, fromNodeLabelMap(margMap))
   }
 }
