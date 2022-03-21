@@ -38,6 +38,8 @@ abstract class SpatialTree extends Serializable {
   def volumeAt(at : NodeLabel) : Double =
     this.cellAt(at).volume
 
+  def splits: Stream[Int]
+
   /**
     * Axis to split along at node
     *
@@ -70,7 +72,7 @@ case class WidestSplitTree(rootCellM : Rectangle) extends SpatialTree {
     rootCellM.volume / pow(2, at.depth)
 
   // NOTE: Emulates unfold, since unfold apparently only exists in Scalaz...
-  val splits : Stream[Int] = Stream.iterate((0, rootCellM.widths)) {
+  override def splits : Stream[Int] = Stream.iterate((0, rootCellM.widths)) {
     case (_, ws) =>
       val i = ws.zipWithIndex.maxBy(_._1)._2
       (i, ws.updated(i, ws(i)/2))
@@ -107,6 +109,7 @@ case class UniformSplitTree(rootCellM : Rectangle) extends SpatialTree {
   override def volumeAt(at : NodeLabel) : Double =
     rootCellM.volume / pow(2, at.depth)
 
+  override def splits: Stream[Int] = Stream.from(1).map(_ % dimension)
   override def axisAt(at : NodeLabel) : Int =
     at.depth % dimension()
 
