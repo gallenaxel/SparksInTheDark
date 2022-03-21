@@ -25,6 +25,12 @@ import NodeLabelFunctions._
 // Leaf-labelled finite (truncated) binary trees
 
 // TODO: Can we make efficient splices part of Truncation instead?
+/**
+  * a range of indices to be included as the leaves of a subtree.
+  *
+  * @param lower minimum index (inclusive)
+  * @param upper maximum index (exclusive)
+  */
 case class Subset(lower : Int, upper : Int) extends Serializable {
   def size() : Int = upper - lower
   def isEmpty() : Boolean = size() == 0
@@ -173,6 +179,13 @@ case class Truncation(leaves : Vector[NodeLabel]) extends Serializable {
 
   def slice(ss : Subset) : Iterator[NodeLabel] = leaves.slice(ss.lower, ss.upper).toIterator
 
+  /**
+    * nested ranges of indices for leaves which are descendents of the corresponding
+    * node in the walk `labs`
+    *
+    * @param labs
+    * @return
+    */
   def descend(labs : Walk) : Stream[Subset] =
     labs.scanLeft(allNodes()) {
       case (ss, lab) => subtreeWithin(lab, ss)

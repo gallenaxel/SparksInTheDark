@@ -38,6 +38,12 @@ abstract class SpatialTree extends Serializable {
   def volumeAt(at : NodeLabel) : Double =
     this.cellAt(at).volume
 
+  /**
+    * Axis to split along at node
+    *
+    * @param at
+    * @return
+    */
   def axisAt(at : NodeLabel) : Int
 
   def cellAt(at : NodeLabel) : Rectangle
@@ -48,6 +54,12 @@ abstract class SpatialTree extends Serializable {
 
     def descendBoxPrime(point : MLVector) : Stream[(NodeLabel, Rectangle)]
 
+  /**
+    * Sub-boxes that the point belongs to at increasing depths
+    *
+    * @param point
+    * @return
+    */
   def descendBox(point : MLVector) : Stream[NodeLabel] = descendBoxPrime(point).map(_._1)
 }
 

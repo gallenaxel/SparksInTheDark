@@ -38,6 +38,13 @@ case class LeafMap[A:ClassTag](truncation : Truncation, vals : Vector[A]) extend
 
   def slice(ss : Subset) : Iterator[A] = vals.slice(ss.lower, ss.upper).toIterator
 
+  /**
+    * merges tree upwards
+    *
+    * @param at node to merge at. All leaves that are descendents are merged
+    * @param op the merging operation (e.g. `_ + _` for counts)
+    * @return (lowest merged index, merged LeafMap)
+    */
   def mergeSubtreeWithIdx(at : NodeLabel, op : (A, A) => A) : (Option[Int], LeafMap[A]) = {
     val ss = truncation.subtree(at)
       if(ss.size == 0) (none(), this)
@@ -60,6 +67,13 @@ case class LeafMap[A:ClassTag](truncation : Truncation, vals : Vector[A]) extend
       }
     }
 
+  /**
+    * merges tree upwards
+    *
+    * @param at node to merge at. All leaves that are descendents are merged
+    * @param op the merging operation (e.g. `_ + _` for counts)
+    * @return (merged parent of `at`, merged LeafMap)
+    */
     def mergeSubtreeCheckCherry(at : NodeLabel, op : (A, A) => A) : (Option[(NodeLabel, A)], LeafMap[A]) = {
       val (idxOpt, t) = mergeSubtreeWithIdx(at, op)
       idxOpt match {
@@ -81,6 +95,13 @@ case class LeafMap[A:ClassTag](truncation : Truncation, vals : Vector[A]) extend
     def cherries(op : (A, A) => A) : Iterator[(NodeLabel, A)] =
       truncation.cherries().map(x => (truncation.leaves(x(0)).parent, x.map(vals(_)).reduce(op)))
 
+  /**
+    * merges tree upwards
+    *
+    * @param at node to merge at. All leaves that are descendents are merged
+    * @param op the merging operation (e.g. `_ + _` for counts)
+    * @return merged LeafMap
+    */
     def mergeSubtree(at : NodeLabel, op : (A, A) => A) : LeafMap[A] =
       mergeSubtreeWithIdx(at, op)._2
 
@@ -90,6 +111,13 @@ case class LeafMap[A:ClassTag](truncation : Truncation, vals : Vector[A]) extend
       toIterable().toMap
 
     // TODO: Figure out if this can be done more efficently
+    /**
+      * internal nodes and their merged values
+      *
+      * @param base neutral element of merging operation s.t. `op(base, a) = a = op(a, base)`
+      * @param op the merging operation
+      * @return
+      */
     def internal(base : A, op : (A, A) => A) : Stream[(NodeLabel, A)] = {
       def go(lab : NodeLabel, bound : Subset) : (A, Stream[(NodeLabel, A)]) = {
         val newBound = truncation.subtreeWithin(lab, bound)

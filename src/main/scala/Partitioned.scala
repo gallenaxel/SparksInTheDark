@@ -31,6 +31,7 @@ case class Partitioned[A](points : RDD[(BigInt, A)]) extends Serializable {
 
   def subset(labs : Set[NodeLabel]) : Partitioned[A] = {
     val actualLabs = labs.map(_.lab)
+    // set(x) = set.contains(x)
     Partitioned(points.filter(x => actualLabs(x._1)))
   }
 
