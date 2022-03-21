@@ -79,7 +79,7 @@ case class WidestSplitTree(rootCellM : Rectangle) extends SpatialTree {
   //TODO: Optimise
   override def axisAt(at : NodeLabel) : Int = splits(at.depth)
 
-  override def cellAt(at : NodeLabel) : Rectangle = (at.lefts zip splits).foldLeft(rootCell) {
+  override def cellAt(at : NodeLabel) : Rectangle = (at.lefts zip splits).reverse.tail.foldLeft(rootCell) {
     case (cell, (l, i)) =>
       if(l) cell.lower(i) else cell.upper(i)
   }
