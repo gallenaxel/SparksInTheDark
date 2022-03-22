@@ -85,6 +85,15 @@ object LeafMapOperations {
 case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability, Volume)]) {
   def density(v: MLVector): Probability = 
     densityMap.query(tree.descendBox(v))._2.getOrElse((0.0, 0.0))._1
+
+  def normalize: DensityHistogram = {
+    val (probs, vols) = densityMap.vals.unzip
+    val probSum = probs.sum
+    val volSum = vols.sum
+    val constFactor = volSum / probSum
+    val normVals = densityMap.vals.map{ case (prob, vol) => (prob / vol * constFactor, vol)}
+    copy(densityMap = densityMap.copy(vals = normVals))
+  }
 }
 
 object HistogramOperations {
@@ -119,13 +128,15 @@ object HistogramOperations {
     val splits = densTree.splits
 
     val marginalized = densAndVols.toIterable.groupBy{ case (lab, _) => 
-      // group by box with unwanted axes removed
+      // group by boxes with unwanted axes removed
       marginalizeRectangle(densTree.cellAt(lab), axesToKeep)
     }.map{ case (newRec, densities) => 
       val newVol = newRec.volume
+      // aggregate by sum of densities in the new box
       val newDensity = densities.map { case (_, (dens, vol)) =>
         dens * vol / newVol
       }.sum 
+      // Find NodeLabel corresponding to new box
       val newLabel = {
         val oldLab = densities.head._1
         val axisSplits = splits.take(oldLab.depth).reverse
@@ -140,11 +151,29 @@ object HistogramOperations {
 
     val margTree = widestSideTreeRootedAt(marginalizeRectangle(densTree.rootCell, axesToKeep))
 
-    val ancToDescs = marginalized.keys.toVector.flatMap(node => (1 to node.depth-1).reverse.map(i => (node, node.truncate(i)))).groupBy(_._2).mapValues(_.map(_._1))
-    val ancToDescsWithMissing = ancToDescs.mapValues(descs => descs.union(descs.map(_.sibling)).distinct)
+    // Find which boxes overlap with their descendants
+    val ancToDescs = marginalized.keys.toVector
+      .flatMap(node => 
+        (1 to node.depth-1).reverse.map(i => (node, node.truncate(i)))
+      ).groupBy{ case (desc, anc) => anc }
+      .mapValues(vec => vec.map{ case (desc, anc) => desc })
 
-    val descsWithDens = ancToDescsWithMissing.toVector.flatMap{ case (anc, descs) => descs.map(desc => (desc, marginalized.getOrElse(anc, (0.0, 0.0))._1)) }.groupBy{ case (lab, dens) => lab }.mapValues( labAndDens => labAndDens.map(_._2).sum)
+    // Add missing siblings of descendants
+    val ancToDescsWithMissing = ancToDescs.mapValues(descs =>
+      descs.union(descs.map(_.sibling)).distinct
+    )
 
+    // Map descendents to the sum of densities of ancestor boxes
+    val descsWithDens = ancToDescsWithMissing.toVector
+      .flatMap{ case (anc, descs) => 
+        descs.map(desc => (desc, marginalized.getOrElse(anc, (0.0, 0.0))._1)) 
+      }.groupBy{ case (lab, dens) => lab }
+      .mapValues( labAndDens => 
+        labAndDens.map{ case (lab, dens) => dens }.sum
+      )
+
+    // Add the densities from ancestor boxes to the descendants,
+    // and remove all nodes that are not leaves.
     val margMap = descsWithDens.keys.foldLeft(marginalized){
       case (mapAcc, descLab) =>
         val oldValue = mapAcc.getOrElse(descLab, (0.0, margTree.volumeAt(descLab)))
