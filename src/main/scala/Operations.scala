@@ -128,7 +128,7 @@ object HistogramOperations {
       }.sum 
       val newLabel = {
         val oldLab = densities.head._1
-        val axisSplits = splits.take(oldLab.depth)
+        val axisSplits = splits.take(oldLab.depth).reverse
         val splitDirections = getSplitDirections(oldLab)
         val newDirections = axisSplits.zip(splitDirections).filter{ case (axis, _) =>
           axesToKeep.contains(axis)
