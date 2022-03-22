@@ -121,8 +121,10 @@ object HistogramOperations {
   }
 
   def marginalize(hist: Histogram, axesToKeep: Vector[Axis]): DensityHistogram = {
-    val densHist = toDensityHistogram(hist)
+    marginalize(toDensityHistogram(hist), axesToKeep)
+  }
 
+  def marginalize(densHist: DensityHistogram, axesToKeep: Vector[Axis]): DensityHistogram = {
     val densTree = densHist.tree
     val densAndVols = densHist.densityMap
 
