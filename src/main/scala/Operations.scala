@@ -87,11 +87,12 @@ case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability,
     densityMap.query(tree.descendBox(v))._2.getOrElse((0.0, 0.0))._1
 
   def normalize: DensityHistogram = {
-    val (probs, vols) = densityMap.vals.unzip
-    val probSum = probs.sum
-    val volSum = vols.sum
-    val constFactor = volSum / probSum
-    val normVals = densityMap.vals.map{ case (prob, vol) => (prob / vol * constFactor, vol)}
+    val probSum = densityMap.vals.map{ case (prob, _) => 
+      prob 
+    }.sum
+    val normVals = densityMap.vals.map{ case (prob, vol) =>
+      (prob / (vol * probSum), vol)
+    }
     copy(densityMap = densityMap.copy(vals = normVals))
   }
 }
@@ -110,20 +111,20 @@ object HistogramOperations {
 
     DensityHistogram(tree, fromNodeLabelMap(densitiesWithVolumes))
   }
+  
+  def marginalizeRectangle(rec: Rectangle, axesToKeep: Vector[Int]): Rectangle = {
+    Rectangle(axesToKeep map rec.low, axesToKeep map rec.high)
+  }
+
+  def getSplitDirections(lab: NodeLabel): Vector[Int] = {
+    (0 to lab.depth - 1).toVector.map(lab.lab.testBit).map(if (_) 1 else 0)
+  }
 
   def marginalize(hist: Histogram, axesToKeep: Vector[Axis]): DensityHistogram = {
     val densHist = toDensityHistogram(hist)
 
     val densTree = densHist.tree
     val densAndVols = densHist.densityMap
-
-    def marginalizeRectangle(rec: Rectangle, axesToKeep: Vector[Int]): Rectangle = {
-      Rectangle(axesToKeep map rec.low, axesToKeep map rec.high)
-    }
-
-    def getSplitDirections(lab: NodeLabel): Vector[Int] = {
-      (0 to lab.depth - 1).toVector.map(lab.lab.testBit).map(if (_) 1 else 0)
-    }
 
     val splits = densTree.splits
 
