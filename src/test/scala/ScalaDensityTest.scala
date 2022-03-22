@@ -23,6 +23,7 @@ import co.wiklund.disthist.BinarySearchFunctions._
 import co.wiklund.disthist.UnfoldTreeFunctions._
 import co.wiklund.disthist.TruncationOperations._
 import co.wiklund.disthist.LeafMapOperations._
+import co.wiklund.disthist.HistogramOperations._
 
 
 class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
@@ -153,6 +154,18 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     assert(b == join(b, b))
     assert(j == join(j, a))
     assert(j == join(j, b))
+  }
+
+  "lefts" should "give the path from the root node" in {
+    val lab = rootLabel.left.left.right.left
+    val expectedLefts = Vector(true, false, true, true, false)
+    assert(lab.lefts.toVector === expectedLefts)
+  }
+
+  "rights" should "give the path from the root node" in {
+    val lab = rootLabel.left.left.right.left
+    val expectedLefts = Vector(false, true, false, false, true)
+    assert(lab.rights.toVector === expectedLefts)
   }
 
   "initialLefts" should "give number of initial left steps" in {
@@ -830,7 +843,24 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
   // }
 }
 
-class OperationTests extends FlatSpec with Matchers {
+class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
+
+  private var margHist: DensityHistogram = null
+
+  override protected def beforeAll(): Unit = {
+    margHist = {
+      val rootBox = Rectangle(Vector(0.0, 0.0), Vector(1.0, 1.0))
+      val axesToKeep = Vector(0)
+      val tree = widestSideTreeRootedAt(rootBox)
+      val nodes = Vector(4, 10, 11, 6, 14,15).map(NodeLabel(_))
+      val counts: Vector[Count] = Vector(2,1,2,1,2,2)
+      val totalCount = counts.sum
+      val leafMap = fromNodeLabelMap(nodes.zip(counts).toMap)
+      val hist = Histogram(tree, totalCount, leafMap)
+      marginalize(hist, axesToKeep)
+    }
+  }
+
   "rpUnion" should "generate only the leaves of the unioned tree" in {
     val nodes1 = Vector(8,9,5,3).map(NodeLabel(_))
     val trunc1 = Truncation(nodes1)
@@ -871,7 +901,28 @@ class OperationTests extends FlatSpec with Matchers {
     assert(result.vals.zip(expectedVals).forall{ case (x,y) => math.abs(x - y) < 1e-10})
   }
 
-  "marginalize" should "work as expected" in {
+  "marginalize" should "give proper density" in {
+    assert(abs(margHist.densityMap.vals.map{ case (dens, vol) => dens * vol }.sum - 1) < 1e-10 )
+  }
+
+  it should "have the correct truncation" in {
+    val expectedLeaves = Vector(4,5,6,7).map(NodeLabel(_))
+    assert(margHist.densityMap.truncation === Truncation(expectedLeaves))
+  }
+  
+  it should "have the correct volumes" in {
+    val margVols = margHist.densityMap.vals.map(_._2).distinct
+    assert(margVols === Vector(0.25))
+  }
+
+  it should "have the correct densities" in {
+    val expectedLeaves = Vector(4,5,6,7).map(NodeLabel(_))
+    val expectedDensities = Vector(0.8, 1.2, 1.0, 1.0)
+    val expectedLeafMap = fromNodeLabelMap(expectedLeaves.zip(expectedDensities).toMap)
+    
+    val densDiffs = margHist.densityMap.vals.map(_._1).zip(expectedDensities).map{ case (a, b) => abs(a - b) }
+    assert(densDiffs.sum < 1e-10)
+
 
   }
 }
