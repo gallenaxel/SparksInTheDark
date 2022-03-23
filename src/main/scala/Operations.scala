@@ -9,6 +9,7 @@ import LeafMapFunctions._
 import LeafMapOperations._
 import SpatialTreeFunctions._
 import Types._
+import org.apache.spark.mllib.linalg.Vectors
 
 object TruncationOperations {
   /**
@@ -58,7 +59,12 @@ object LeafMapOperations {
     val ancestorsInT1 = t1only.leaves diff t2missing
     val ancestorsInT2 = t2only.leaves diff t1missing
 
-    def getUnionMap(unionedTree: Set[NodeLabel], leafMap: Map[NodeLabel, A], missingNodes: Vector[NodeLabel], ancestorsInMissing: Vector[NodeLabel]): Map[NodeLabel, A] = {
+    def getUnionMap(
+      unionedTree: Set[NodeLabel], 
+      leafMap: Map[NodeLabel, A], 
+      missingNodes: Vector[NodeLabel], 
+      ancestorsInMissing: Vector[NodeLabel]
+    ): Map[NodeLabel, A] = {
       var i = 0
       val ancestorsOfMissing = missingNodes.tail.scanLeft(ancestorsInMissing.head)(
         (anc, node) => 
@@ -112,10 +118,26 @@ object HistogramOperations {
     DensityHistogram(tree, fromNodeLabelMap(densitiesWithVolumes))
   }
   
-  def marginalizeRectangle(rec: Rectangle, axesToKeep: Vector[Int]): Rectangle = {
+  /**
+    * Removes axes from a rectangle
+    *
+    * @param rec
+    * @param axesToKeep
+    * @return
+    */
+  def marginalizeRectangle(rec: Rectangle, axesToKeep: Vector[Axis]): Rectangle = {
     Rectangle(axesToKeep map rec.low, axesToKeep map rec.high)
   }
 
+  /**
+    * The bit-value of the label as a vector
+    * 
+    * ex. 14 = b1110, so
+    * getSplitDirections(NodeLabel(14)) = Vector(1,1,1,0)
+    *
+    * @param lab
+    * @return
+    */
   def getSplitDirections(lab: NodeLabel): Vector[Int] = {
     (0 to lab.depth - 1).toVector.map(lab.lab.testBit).map(if (_) 1 else 0)
   }
@@ -185,5 +207,50 @@ object HistogramOperations {
     }.filter{ case (lab, _) => !ancToDescs.keySet.contains(lab) }
 
     DensityHistogram(margTree, fromNodeLabelMap(margMap))
+  }
+
+  def slice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoints: Vector[Double]): DensityHistogram = {
+    
+    val mlSlicePoints = Vectors.dense(slicePoints.toArray)
+    val sliceBoxes = densHist.densityMap.truncation.leaves.map( node => 
+      node -> marginalizeRectangle(densHist.tree.cellAt(node), sliceAxes)
+    ).toMap.filter{ case (lab, rec) => 
+      rec.contains(mlSlicePoints)
+    }
+
+    val splits = densHist.tree.splits
+    val nonSliceAxes = ((0 to densHist.tree.dimension - 1).toSet -- sliceAxes).toVector
+
+    val newLabels = sliceBoxes.keys.toVector.map{ lab => 
+      val axisSplits = splits.take(lab.depth).reverse
+      val splitDirections = getSplitDirections(lab)
+
+      val newDirections = axisSplits.zip(splitDirections)
+        .filter{ case (axis, _) =>
+          nonSliceAxes.contains(axis)
+        }.map{ case (_, direction) => direction }
+
+      val newLab = newDirections.reverse
+        .foldLeft(BigInt(1)){ case (labAcc, i) => 
+          (labAcc << 1) + i 
+        }
+
+      lab -> NodeLabel(newLab)
+    }
+
+    val densMap = densHist.densityMap.toMap
+    val slicedRootBox = marginalizeRectangle(densHist.tree.rootCell, nonSliceAxes)
+    val slicedTree = widestSideTreeRootedAt(slicedRootBox)
+
+    val slicedNodeMap = newLabels.map{ case (oldLab, newLab) =>
+      newLab -> (densMap(oldLab)._1, slicedTree.volumeAt(newLab))
+    }.toMap
+
+    val newTrunc = fromLeafSet(slicedNodeMap.keySet)
+    val missingNodes = newTrunc.minimalCompletion.leaves.toSet -- newTrunc.leaves.toSet
+
+    val slicedNodeMapWithMissing = slicedNodeMap ++ missingNodes.map( node => node -> (0.0, slicedTree.volumeAt(node)) )
+
+    DensityHistogram(slicedTree, fromNodeLabelMap(slicedNodeMapWithMissing))
   }
 }
