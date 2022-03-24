@@ -871,6 +871,14 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     assert(unioned.leaves.map(_.lab) === expectedLeaves)
   }
 
+  it should "work with sparse trees" in {
+    val t1 = Truncation(Vector(4,5).map(NodeLabel(_)))
+    val t2 = Truncation(Vector(8,6,15).map(NodeLabel(_)))
+    val unioned = rpUnion(t1, t2)
+    val expected = Truncation(Vector(8,5,6,15).map(NodeLabel(_)))
+    assert(unioned === expected)
+  }
+
   "mrpTransform" should "be a pointwise transformation" in {
     val trunc = Truncation(Vector(8,9,10,11,3).map(NodeLabel(_)))
     val vals = Vector(1,2,3,4,5)

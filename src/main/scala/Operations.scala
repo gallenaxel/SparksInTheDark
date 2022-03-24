@@ -8,24 +8,57 @@ import TruncationOperations._
 import LeafMapFunctions._
 import LeafMapOperations._
 import SpatialTreeFunctions._
+import HistogramOperations._
 import Types._
 import org.apache.spark.mllib.linalg.Vectors
 
 object TruncationOperations {
+  private object DropHead extends Enumeration {
+    type DropHead = Value
+    val L1, L2, Both = Value
+  }
+  import DropHead._
+
+  private def getDrop(n1: NodeLabel, n2: NodeLabel): (NodeLabel, DropHead) = {
+    if (n1 == n2 || isAncestorOf(n2, n1))
+      (n1, Both)
+    else if (isAncestorOf(n1, n2))
+      (n2, Both)
+    else if (isLeftOf(n1, n2))
+      (n1, L1)
+    else
+      (n2, L2)
+  }
+
+  @scala.annotation.tailrec
+  private def unionHelper(
+    acc: Vector[NodeLabel],
+    l1: Vector[NodeLabel], 
+    l2: Vector[NodeLabel]
+  ): Vector[NodeLabel] = {
+    if (l1.isEmpty)
+      acc ++ l2
+    else if (l2.isEmpty)
+      acc ++ l1
+    else {
+      val n1 = l1.head
+      val n2 = l2.head
+      val (next, drop) = getDrop(n1, n2)
+      unionHelper(
+        acc :+ next, 
+        if (drop != L2) l1.tail else l1,
+        if (drop != L1) l2.tail else l2
+      )
+    }
+  }
+
   /**
     * The leaves of the tree resulting from `RPUnion(t1, t2)`
     */
   def rpUnion(t1: Truncation, t2: Truncation): Truncation = {
-    val t1nodes = t1.leaves.toSet
-    val t2nodes = t2.leaves.toSet
-    val commonNodes = t1nodes intersect t2nodes
-    val t1only = Truncation(t1.leaves diff t2.leaves)
-    val t2only = Truncation(t2.leaves diff t1.leaves)
-    val t1missing = t1only.leaves.toSet.flatMap((node: NodeLabel) => t2only.viewSubtree(node, 0))
-    val t2missing = t2only.leaves.toSet.flatMap((node: NodeLabel) => t1only.viewSubtree(node, 0))
-    fromLeafSet(t1missing union commonNodes union t2missing)
+    Truncation(unionHelper(Vector.empty, t1.leaves, t2.leaves))
   }
-  
+   
   /**
     * WARNING: Does not check that `descendent` has an ancestor in the tree.
     *
@@ -252,5 +285,43 @@ object HistogramOperations {
     val slicedNodeMapWithMissing = slicedNodeMap ++ missingNodes.map( node => node -> (0.0, slicedTree.volumeAt(node)) )
 
     DensityHistogram(slicedTree, fromNodeLabelMap(slicedNodeMapWithMissing))
+  }
+
+  def toCollatedHistogram[K](hist: Histogram, key: K): CollatedHistogram[K] = {
+    toCollatedHistogram(toDensityHistogram(hist), key)
+  }
+
+  def toCollatedHistogram[K](hist: DensityHistogram, key: K): CollatedHistogram[K] = {
+    val mappedDensities = hist.densityMap.vals.map(v => Map(key -> v))
+    CollatedHistogram(hist.tree, hist.densityMap.copy(vals = mappedDensities))
+  }
+}
+
+case class CollatedHistogram[K](tree: SpatialTree, densities: LeafMap[Map[K, (Probability, Volume)]]) {
+  private type MapType = Map[K, (Probability, Volume)]
+
+  protected val keySet = densities.vals.head.keySet
+  private def collatorOp(kv1: MapType, kv2: MapType): MapType = {
+    val all = kv1 ++ kv2
+    val minVol = all.values.map{ case (_, vol) => vol }.min
+    all.mapValues{ case (dens, vol) => (dens * minVol / vol, minVol)}
+  }
+
+  def collate(hist: Histogram, key: K): CollatedHistogram[K] = {
+    collate(toCollatedHistogram(hist, key))
+  }
+
+  def collate(hist: DensityHistogram, key: K): CollatedHistogram[K] = {
+    collate(toCollatedHistogram(hist, key))
+  }
+
+  def collate(hist: CollatedHistogram[K]): CollatedHistogram[K] = {
+    if (keySet.intersect(hist.keySet).nonEmpty)
+      throw new IllegalArgumentException(s"keySets are not allowed to intersect. The common keys are ${keySet intersect hist.keySet}.")
+
+    if (tree != hist.tree)
+      throw new IllegalArgumentException("Collated histograms must have the same root box.")
+
+    CollatedHistogram(tree, mrpOperate(densities, hist.densities, collatorOp))
   }
 }
