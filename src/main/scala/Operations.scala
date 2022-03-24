@@ -12,50 +12,49 @@ import HistogramOperations._
 import Types._
 import org.apache.spark.mllib.linalg.Vectors
 
+object DropHead extends Enumeration {
+  type DropHead = Value
+  val L1, L2, Both = Value
+}
+import DropHead._
+
 object TruncationOperations {
-  private object DropHead extends Enumeration {
-    type DropHead = Value
-    val L1, L2, Both = Value
-  }
-  import DropHead._
-
-  private def getDrop(n1: NodeLabel, n2: NodeLabel): (NodeLabel, DropHead) = {
-    if (n1 == n2 || isAncestorOf(n2, n1))
-      (n1, Both)
-    else if (isAncestorOf(n1, n2))
-      (n2, Both)
-    else if (isLeftOf(n1, n2))
-      (n1, L1)
-    else
-      (n2, L2)
-  }
-
-  @scala.annotation.tailrec
-  private def unionHelper(
-    acc: Vector[NodeLabel],
-    l1: Vector[NodeLabel], 
-    l2: Vector[NodeLabel]
-  ): Vector[NodeLabel] = {
-    if (l1.isEmpty)
-      acc ++ l2
-    else if (l2.isEmpty)
-      acc ++ l1
-    else {
-      val n1 = l1.head
-      val n2 = l2.head
-      val (next, drop) = getDrop(n1, n2)
-      unionHelper(
-        acc :+ next, 
-        if (drop != L2) l1.tail else l1,
-        if (drop != L1) l2.tail else l2
-      )
-    }
-  }
-
   /**
     * The leaves of the tree resulting from `RPUnion(t1, t2)`
     */
   def rpUnion(t1: Truncation, t2: Truncation): Truncation = {
+    def getDrop(n1: NodeLabel, n2: NodeLabel): (NodeLabel, DropHead) = {
+      if (n1 == n2 || isAncestorOf(n2, n1))
+        (n1, Both)
+      else if (isAncestorOf(n1, n2))
+        (n2, Both)
+      else if (isLeftOf(n1, n2))
+        (n1, L1)
+      else
+        (n2, L2)
+    }
+
+    @scala.annotation.tailrec
+    def unionHelper(
+      acc: Vector[NodeLabel],
+      l1: Vector[NodeLabel], 
+      l2: Vector[NodeLabel]
+    ): Vector[NodeLabel] = {
+      if (l1.isEmpty)
+        acc ++ l2
+      else if (l2.isEmpty)
+        acc ++ l1
+      else {
+        val n1 = l1.head
+        val n2 = l2.head
+        val (next, drop) = getDrop(n1, n2)
+        unionHelper(
+          acc :+ next, 
+          if (drop != L2) l1.tail else l1,
+          if (drop != L1) l2.tail else l2
+        )
+      }
+    } 
     Truncation(unionHelper(Vector.empty, t1.leaves, t2.leaves))
   }
    
