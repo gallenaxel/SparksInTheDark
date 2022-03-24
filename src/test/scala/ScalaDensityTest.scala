@@ -909,6 +909,29 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     assert(result.vals.zip(expectedVals).forall{ case (x,y) => math.abs(x - y) < 1e-10})
   }
 
+  it should "work with sparse trees" in {
+    val nodes1 = Vector(8,9,5).map(NodeLabel(_))
+    val trunc1 = Truncation(nodes1)
+    val vals1 = Vector(0.1, 0.2, 0.3)
+    val leafMap1 = LeafMap(trunc1, vals1)
+
+    val nodes2 = Vector(4,11,3).map(NodeLabel(_))
+    val trunc2 = Truncation(nodes2)
+    val vals2 = Vector(0.4, 0.2, 0.1)
+    val leafMap2 = LeafMap(trunc2, vals2)
+
+    val op = (x: Double, y: Double) => (x + y) / 2
+
+    val expectedTrunc = Truncation(Vector(8,9,11,3).map(NodeLabel(_)))
+    val expectedVals = Vector(0.25, 0.3, 0.25, 0.1)
+
+    val result = mrpOperate(leafMap1, leafMap2, op)
+    val result2 = mrpOperate(leafMap2, leafMap1, op)
+    assert(result === result2)
+    assert(result.truncation === expectedTrunc)
+    assert(result.vals.zip(expectedVals).forall{ case (x,y) => math.abs(x - y) < 1e-10})
+  }
+
   "marginalize" should "give proper density" in {
     assert(abs(margHist.densityMap.vals.map{ case (dens, vol) => dens * vol }.sum - 1) < 1e-10 )
   }

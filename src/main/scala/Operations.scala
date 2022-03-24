@@ -74,50 +74,101 @@ object LeafMapOperations {
   def mrpTransform[A, B:ClassTag](leafMap: LeafMap[A], f: A => B): LeafMap[B] = {
     leafMap.copy(vals = leafMap.vals.map(f))
   }
-  
+
   def mrpOperate[A:ClassTag](leafMap1: LeafMap[A], leafMap2: LeafMap[A], op: (A, A) => A): LeafMap[A] = {
-    val t1 = leafMap1.truncation
-    val t2 = leafMap2.truncation
-    val t1nodes = t1.leaves
-    val t2nodes = t2.leaves
-    val commonNodes = t1nodes intersect t2nodes
-    val t1only = Truncation(t1.leaves diff t2.leaves)
-    val t2only = Truncation(t2.leaves diff t1.leaves)
-    val t1missing = t1only.leaves.flatMap((node: NodeLabel) => t2only.viewSubtree(node, 0)).toVector.distinct // missing from t1
-    val t2missing = t2only.leaves.flatMap((node: NodeLabel) => t1only.viewSubtree(node, 0)).toVector.distinct // missing from t2
-
-    val unionedTree = (t1missing union commonNodes.toVector union t2missing).toSet
-
-    val ancestorsInT1 = t1only.leaves diff t2missing
-    val ancestorsInT2 = t2only.leaves diff t1missing
-
-    def getUnionMap(
-      unionedTree: Set[NodeLabel], 
-      leafMap: Map[NodeLabel, A], 
-      missingNodes: Vector[NodeLabel], 
-      ancestorsInMissing: Vector[NodeLabel]
-    ): Map[NodeLabel, A] = {
-      var i = 0
-      val ancestorsOfMissing = missingNodes.tail.scanLeft(ancestorsInMissing.head)(
-        (anc, node) => 
-          if (isAncestorOf(anc, node)) 
-            anc 
-          else {
-            i += 1
-            ancestorsInMissing(i)
-          })
-
-      val missingVals = ancestorsOfMissing.map(leafMap(_))
-      (leafMap ++ missingNodes.zip(missingVals)).filterKeys(unionedTree.contains(_))
+    def getOperateDrop(kv1: (NodeLabel, A), kv2: (NodeLabel, A)): ((NodeLabel, A), DropHead, Option[NodeLabel]) = {
+      val (n1, n2) = (kv1._1, kv2._1)
+      val (v1, v2) = (kv1._2, kv2._2)
+      val newv = op(v1, v2)
+      if (n1 == n2)
+        ((n1, newv), Both, None)
+      else if (isAncestorOf(n1, n2))
+        ((n2, newv), L2, Some(n1))
+      else if (isAncestorOf(n2, n1))
+        ((n1, newv), L1, Some(n2))
+      else if (isLeftOf(n1, n2))
+        ((n1, v1), L1, None)
+      else // (isLeftOf(n2, n1))
+        ((n2, v2), L2, None)
     }
-   
-    val updatedMap1 = getUnionMap(unionedTree, leafMap1.toMap, t1missing, ancestorsInT1)
-    val updatedMap2 = getUnionMap(unionedTree, leafMap2.toMap, t2missing, ancestorsInT2)
 
-    val operatedLeafMap = (updatedMap1.toVector ++ updatedMap2.toVector).groupBy(_._1).mapValues(_.map(_._2).reduce(op))
-    
-    fromNodeLabelMap(operatedLeafMap)
+    @scala.annotation.tailrec
+    def operateHelper(
+      acc: Vector[(NodeLabel, A)],
+      ancOpts: Set[Option[NodeLabel]],
+      l1: Vector[(NodeLabel, A)],
+      l2: Vector[(NodeLabel, A)]
+    ): (Vector[(NodeLabel, A)], Set[Option[NodeLabel]]) = {
+      if (l1.isEmpty) 
+        (acc ++ l2, ancOpts)
+      else if (l2.isEmpty) 
+        (acc ++ l1, ancOpts)
+      else {
+        val (next, drop, ancOpt) = getOperateDrop(l1.head, l2.head)
+        operateHelper(
+          acc :+ next,
+          ancOpts + ancOpt,
+          if (drop != L2) l1.tail else l1,
+          if (drop != L1) l2.tail else l2
+        )
+      }
+    }
+
+   val (operated, ancOpts) = operateHelper(
+      Vector.empty, 
+      Set.empty,
+      leafMap1.leaves zip leafMap1.vals, 
+      leafMap2.leaves zip leafMap2.vals
+    )
+    val ancestors = ancOpts.flatten
+    val (operatedLeaves, operatedVals) = operated.filter{ case (node, _) => !ancestors.contains(node) }.unzip
+    LeafMap(Truncation(operatedLeaves), operatedVals)
   }
+
+
+  // def mrpOperate[A:ClassTag](leafMap1: LeafMap[A], leafMap2: LeafMap[A], op: (A, A) => A): LeafMap[A] = {
+  //   val t1 = leafMap1.truncation
+  //   val t2 = leafMap2.truncation
+  //   val t1nodes = t1.leaves
+  //   val t2nodes = t2.leaves
+  //   val commonNodes = t1nodes intersect t2nodes
+  //   val t1only = Truncation(t1.leaves diff t2.leaves)
+  //   val t2only = Truncation(t2.leaves diff t1.leaves)
+  //   val t1missing = t1only.leaves.flatMap((node: NodeLabel) => t2only.viewSubtree(node, 0)).toVector.distinct // missing from t1
+  //   val t2missing = t2only.leaves.flatMap((node: NodeLabel) => t1only.viewSubtree(node, 0)).toVector.distinct // missing from t2
+
+  //   val unionedTree = (t1missing union commonNodes.toVector union t2missing).toSet
+
+  //   val ancestorsInT1 = t1only.leaves diff t2missing
+  //   val ancestorsInT2 = t2only.leaves diff t1missing
+
+  //   def getUnionMap(
+  //     unionedTree: Set[NodeLabel], 
+  //     leafMap: Map[NodeLabel, A], 
+  //     missingNodes: Vector[NodeLabel], 
+  //     ancestorsInMissing: Vector[NodeLabel]
+  //   ): Map[NodeLabel, A] = {
+  //     var i = 0
+  //     val ancestorsOfMissing = missingNodes.tail.scanLeft(ancestorsInMissing.head)(
+  //       (anc, node) => 
+  //         if (isAncestorOf(anc, node)) 
+  //           anc 
+  //         else {
+  //           i += 1
+  //           ancestorsInMissing(i)
+  //         })
+
+  //     val missingVals = ancestorsOfMissing.map(leafMap(_))
+  //     (leafMap ++ missingNodes.zip(missingVals)).filterKeys(unionedTree.contains(_))
+  //   }
+   
+  //   val updatedMap1 = getUnionMap(unionedTree, leafMap1.toMap, t1missing, ancestorsInT1)
+  //   val updatedMap2 = getUnionMap(unionedTree, leafMap2.toMap, t2missing, ancestorsInT2)
+
+  //   val operatedLeafMap = (updatedMap1.toVector ++ updatedMap2.toVector).groupBy(_._1).mapValues(_.map(_._2).reduce(op))
+    
+  //   fromNodeLabelMap(operatedLeafMap)
+  // }
 }
 
 case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability, Volume)]) {
