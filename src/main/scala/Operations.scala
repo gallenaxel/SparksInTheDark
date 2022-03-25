@@ -305,11 +305,12 @@ object HistogramOperations {
 case class CollatedHistogram[K](tree: SpatialTree, densities: LeafMap[Map[K, (Probability, Volume)]]) {
   private type MapType = Map[K, (Probability, Volume)]
 
-  protected val keySet = densities.vals.head.keySet
+  val keySet = densities.vals.head.keySet
+
   private def collatorOp(kv1: MapType, kv2: MapType): MapType = {
     val all = kv1 ++ kv2
     val minVol = all.values.map{ case (_, vol) => vol }.min
-    all.mapValues{ case (dens, vol) => (dens * minVol / vol, minVol)}
+    all.mapValues{ case (dens, vol) => (dens, minVol)}
   }
 
   def collate(hist: Histogram, key: K): CollatedHistogram[K] = {
@@ -327,6 +328,19 @@ case class CollatedHistogram[K](tree: SpatialTree, densities: LeafMap[Map[K, (Pr
     if (tree != hist.tree)
       throw new IllegalArgumentException("Collated histograms must have the same root box.")
 
-    CollatedHistogram(tree, mrpOperate(densities, hist.densities, collatorOp))
+    def addSiblings(density: LeafMap[MapType]): LeafMap[MapType] = {
+      val leaves = density.leaves
+      val missingSiblings = leaves.map(_.sibling).toSet -- leaves
+      val keys = density.vals.head.keySet
+      val missingMap = missingSiblings.map{ node => 
+        val vol = tree.volumeAt(node)
+        node -> keys.map(_ -> (0.0, vol)).toMap
+      }
+      
+      val newMap = density.toMap ++ missingMap
+      fromNodeLabelMap(newMap)
+    }
+
+    CollatedHistogram(tree, mrpOperate(addSiblings(densities), addSiblings(hist.densities), collatorOp))
   }
 }
