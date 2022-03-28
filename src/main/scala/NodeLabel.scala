@@ -25,8 +25,8 @@ import Types._
 case class NodeLabel(lab : BigInt) extends Serializable {
   private val rootLabel : BigInt = 1
 
-  def    left() : NodeLabel = NodeLabel(2*lab)
-  def   right() : NodeLabel = NodeLabel(2*lab + 1)
+  def    left() : NodeLabel = NodeLabel(lab << 1)
+  def   right() : NodeLabel = NodeLabel((lab << 1).flipBit(0))
   def isRight() : Boolean   =  lab.testBit(0)
   def  isLeft() : Boolean   = !lab.testBit(0)
 
@@ -34,7 +34,8 @@ case class NodeLabel(lab : BigInt) extends Serializable {
   def ancestor(level : Int) : NodeLabel = NodeLabel(lab >> level)
   def parent() : NodeLabel = ancestor(1)
   def sibling() : NodeLabel =
-    if(isLeft()) parent().right else parent().left
+    NodeLabel(lab.flipBit(0))
+    // if(isLeft()) parent().right else parent().left
 
   def children() : Set[NodeLabel] =
     Set(left(), right())
