@@ -13,26 +13,7 @@ import co.wiklund.disthist.SpatialTreeFunctions._
 import co.wiklund.disthist.HistogramFunctions._
 import co.wiklund.disthist.TruncationFunctions._
 
-
-class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
-
-  private var margHist: DensityHistogram = null
-  private var denseHist: DensityHistogram = null
-  private val tn: Int => NodeLabel = NodeLabel(_)
-  override protected def beforeAll(): Unit = {
-    val rootBox = Rectangle(Vector(0.0, 0.0), Vector(1.0, 1.0))
-    val axesToKeep = Vector(0)
-    val tree = widestSideTreeRootedAt(rootBox)
-    val nodes = Vector(4, 10, 11, 6, 14, 15).map(NodeLabel(_))
-    val counts: Vector[Count] = Vector(2,1,2,1,2,2)
-    val totalCount = counts.sum
-    val leafMap = fromNodeLabelMap(nodes.zip(counts).toMap)
-    val hist = Histogram(tree, totalCount, leafMap)
-    margHist = marginalize(hist, axesToKeep)
-    
-    denseHist = toDensityHistogram(hist)
-  }
-
+class ArithmeticTests extends FlatSpec with Matchers {
   "rpUnion" should "generate only the leaves of the unioned tree" in {
     val nodes1 = Vector(8,9,5,3).map(NodeLabel(_))
     val trunc1 = Truncation(nodes1)
@@ -105,6 +86,26 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     assert(result.truncation === expectedTrunc)
     assert(result.vals === expectedVals)
     // assert(result.vals.zip(expectedVals).forall{ case (x,y) => math.abs(x - y) < 1e-10})
+  }
+}
+
+class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
+
+  private var margHist: DensityHistogram = null
+  private var denseHist: DensityHistogram = null
+  private val tn: Int => NodeLabel = NodeLabel(_)
+  override protected def beforeAll(): Unit = {
+    val rootBox = Rectangle(Vector(0.0, 0.0), Vector(1.0, 1.0))
+    val axesToKeep = Vector(0)
+    val tree = widestSideTreeRootedAt(rootBox)
+    val nodes = Vector(4, 10, 11, 6, 14, 15).map(NodeLabel(_))
+    val counts: Vector[Count] = Vector(2,1,2,1,2,2)
+    val totalCount = counts.sum
+    val leafMap = fromNodeLabelMap(nodes.zip(counts).toMap)
+    val hist = Histogram(tree, totalCount, leafMap)
+    margHist = marginalize(hist, axesToKeep)
+    
+    denseHist = toDensityHistogram(hist)
   }
 
   "marginalize" should "give proper density" in {
