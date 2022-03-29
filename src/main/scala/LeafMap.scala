@@ -21,6 +21,7 @@ import scala.reflect.ClassTag
 import Types._
 
 import NodeLabelFunctions._
+import TruncationFunctions._
 
 case class LeafMap[A:ClassTag](truncation : Truncation, vals : Vector[A]) extends Serializable {
   // TODO: Optimise?
@@ -163,6 +164,44 @@ object LeafMapFunctions {
   def concatLeafMaps[A:ClassTag](f : Vector[LeafMap[A]]) : LeafMap[A] =
     LeafMap( Truncation(f.map(_.truncation.leaves).fold(Vector())(_++_)),
              f.map(_.vals).fold(Vector())(_++_)    )
+
+  def mrpTransform[A, B:ClassTag](leafMap: LeafMap[A], f: A => B): LeafMap[B] = {
+    leafMap.copy(vals = leafMap.vals.map(f))
+  }
+
+  def mrpOperate[A:ClassTag](leafMap1: LeafMap[A], leafMap2: LeafMap[A], op: (A, A) => A, base: A): LeafMap[A] = {
+
+    val unionLeaves = rpUnion(leafMap1.truncation, leafMap2.truncation).leaves
+
+    val operatedVals = unionLeaves.foldLeft((Vector.empty[A], leafMap1.leaves zip leafMap1.vals, leafMap2.leaves zip leafMap2.vals)){ case ((acc, l1, l2), newNode) => 
+      val v1OptIndex = l1.indexWhere{ case(node, _) => node == newNode || isAncestorOf(node, newNode) }
+      val v2OptIndex = l2.indexWhere{ case(node, _) => node == newNode || isAncestorOf(node, newNode) }
+
+      val newv = (v1OptIndex, v2OptIndex) match {
+        case (i, -1) => op(l1(i)._2, base)
+        case (-1, i) => op(base, l2(i)._2)
+        case (i, k) => op(l1(i)._2, l2(k)._2)
+        case _ => throw new IllegalArgumentException("should not happen")
+      }
+
+      def newIter1 = v1OptIndex match {
+        case -1 => l1
+        case i => if (l1(i)._1 == newNode) l1.drop(i+1) else l1
+      }
+
+      def newIter2 = v2OptIndex match {
+        case -1 => l2
+        case i => if (l2(i)._1 == newNode) l2.drop(i+1) else l2
+      }
+
+      ( acc :+ newv, 
+        if (l1.isEmpty) l1 else newIter1, 
+        if (l2.isEmpty) l2 else newIter2 
+      )
+    }._1
+
+    LeafMap(Truncation(unionLeaves), operatedVals)
+  }
 }
 
 import LeafMapFunctions._

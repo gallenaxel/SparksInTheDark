@@ -10,9 +10,8 @@ import co.wiklund.disthist._
 import co.wiklund.disthist.Types._
 import co.wiklund.disthist.LeafMapFunctions._
 import co.wiklund.disthist.SpatialTreeFunctions._
-import co.wiklund.disthist.TruncationOperations._
-import co.wiklund.disthist.LeafMapOperations._
-import co.wiklund.disthist.HistogramOperations._
+import co.wiklund.disthist.HistogramFunctions._
+import co.wiklund.disthist.TruncationFunctions._
 
 
 class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {

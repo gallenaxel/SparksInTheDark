@@ -5,8 +5,7 @@ import LeafMapFunctions._
 import SpatialTreeFunctions._
 import NodeLabelFunctions._
 import TruncationFunctions._
-import HistogramOperations._
-import LeafMapOperations._
+import HistogramFunctions._
 
 import org.apache.spark.mllib.linalg.Vectors
 
@@ -25,7 +24,7 @@ case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability,
   }
 }
 
-object HistogramOperations {
+object HistogramFunctions {
   def toDensityHistogram(hist: Histogram): DensityHistogram = {
     val counts = hist.counts
     val tree = hist.tree
