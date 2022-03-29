@@ -898,21 +898,22 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val leafMap2 = LeafMap(trunc2, vals2)
 
     val op = (x: Double, y: Double) => (x + y) / 2
+    val base = 0.0
 
     val expectedTrunc = Truncation(Vector(8,9,10,11,3).map(NodeLabel(_)))
     val expectedVals = Vector(0.25, 0.3, 0.3, 0.25, 0.25)
 
-    val result = mrpOperate(leafMap1, leafMap2, op)
-    val result2 = mrpOperate(leafMap2, leafMap1, op)
+    val result = mrpOperate(leafMap1, leafMap2, op, base)
+    val result2 = mrpOperate(leafMap2, leafMap1, op, base)
     assert(result === result2)
     assert(result.truncation === expectedTrunc)
     assert(result.vals.zip(expectedVals).forall{ case (x,y) => math.abs(x - y) < 1e-10})
   }
 
   it should "work with sparse trees" in {
-    val nodes1 = Vector(8,9,5).map(NodeLabel(_))
+    val nodes1 = Vector(16,3).map(NodeLabel(_))
     val trunc1 = Truncation(nodes1)
-    val vals1 = Vector(0.1, 0.2, 0.3)
+    val vals1 = Vector(0.1, 0.3)
     val leafMap1 = LeafMap(trunc1, vals1)
 
     val nodes2 = Vector(4,11,3).map(NodeLabel(_))
@@ -921,15 +922,17 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val leafMap2 = LeafMap(trunc2, vals2)
 
     val op = (x: Double, y: Double) => (x + y) / 2
+    val base = 0.0
 
-    val expectedTrunc = Truncation(Vector(8,9,11,3).map(NodeLabel(_)))
-    val expectedVals = Vector(0.25, 0.3, 0.25, 0.1)
+    val expectedTrunc = Truncation(Vector(16,17,9,11,3).map(NodeLabel(_)))
+    val expectedVals = Vector(0.25, 0.2, 0.2, 0.1, 0.2)
 
-    val result = mrpOperate(leafMap1, leafMap2, op)
-    val result2 = mrpOperate(leafMap2, leafMap1, op)
+    val result = mrpOperate(leafMap1, leafMap2, op, base)
+    val result2 = mrpOperate(leafMap2, leafMap1, op, base)
     assert(result === result2)
     assert(result.truncation === expectedTrunc)
-    assert(result.vals.zip(expectedVals).forall{ case (x,y) => math.abs(x - y) < 1e-10})
+    assert(result.vals === expectedVals)
+    // assert(result.vals.zip(expectedVals).forall{ case (x,y) => math.abs(x - y) < 1e-10})
   }
 
   "marginalize" should "give proper density" in {

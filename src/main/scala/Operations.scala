@@ -79,54 +79,38 @@ object LeafMapOperations {
     leafMap.copy(vals = leafMap.vals.map(f))
   }
 
-  def mrpOperate[A:ClassTag](leafMap1: LeafMap[A], leafMap2: LeafMap[A], op: (A, A) => A): LeafMap[A] = {
-    def getOperateDrop(kv1: (NodeLabel, A), kv2: (NodeLabel, A)): ((NodeLabel, A), DropHead, Option[NodeLabel]) = {
-      val (n1, n2) = (kv1._1, kv2._1)
-      val (v1, v2) = (kv1._2, kv2._2)
-      val newv = op(v1, v2)
-      if (n1 == n2)
-        ((n1, newv), Both, None)
-      else if (isAncestorOf(n1, n2))
-        ((n2, newv), L2, Some(n1))
-      else if (isAncestorOf(n2, n1))
-        ((n1, newv), L1, Some(n2))
-      else if (isLeftOf(n1, n2))
-        ((n1, v1), L1, None)
-      else // (isLeftOf(n2, n1))
-        ((n2, v2), L2, None)
-    }
+  def mrpOperate[A:ClassTag](leafMap1: LeafMap[A], leafMap2: LeafMap[A], op: (A, A) => A, base: A): LeafMap[A] = {
 
-    @scala.annotation.tailrec
-    def operateHelper(
-      acc: Vector[(NodeLabel, A)],
-      ancOpts: Set[Option[NodeLabel]],
-      l1: Vector[(NodeLabel, A)],
-      l2: Vector[(NodeLabel, A)]
-    ): (Vector[(NodeLabel, A)], Set[Option[NodeLabel]]) = {
-      if (l1.isEmpty) 
-        (acc ++ l2, ancOpts)
-      else if (l2.isEmpty) 
-        (acc ++ l1, ancOpts)
-      else {
-        val (next, drop, ancOpt) = getOperateDrop(l1.head, l2.head)
-        operateHelper(
-          acc :+ next,
-          ancOpts + ancOpt,
-          if (drop != L2) l1.tail else l1,
-          if (drop != L1) l2.tail else l2
-        )
+    val unionLeaves = rpUnion(leafMap1.truncation, leafMap2.truncation).leaves
+
+    val operatedVals = unionLeaves.foldLeft((Vector.empty[A], leafMap1.leaves zip leafMap1.vals, leafMap2.leaves zip leafMap2.vals)){ case ((acc, l1, l2), newNode) => 
+      val v1OptIndex = l1.indexWhere{ case(node, _) => node == newNode || isAncestorOf(node, newNode) }
+      val v2OptIndex = l2.indexWhere{ case(node, _) => node == newNode || isAncestorOf(node, newNode) }
+
+      val newv = (v1OptIndex, v2OptIndex) match {
+        case (i, -1) => op(l1(i)._2, base)
+        case (-1, i) => op(base, l2(i)._2)
+        case (i, k) => op(l1(i)._2, l2(k)._2)
+        case _ => throw new IllegalArgumentException("should not happen")
       }
-    }
 
-   val (operated, ancOpts) = operateHelper(
-      Vector.empty, 
-      Set.empty,
-      leafMap1.leaves zip leafMap1.vals, 
-      leafMap2.leaves zip leafMap2.vals
-    )
-    val ancestors = ancOpts.flatten
-    val (operatedLeaves, operatedVals) = operated.filter{ case (node, _) => !ancestors.contains(node) }.unzip
-    LeafMap(Truncation(operatedLeaves), operatedVals)
+      def newIter1 = v1OptIndex match {
+        case -1 => l1
+        case i => if (l1(i)._1 == newNode) l1.drop(i+1) else l1
+      }
+
+      def newIter2 = v2OptIndex match {
+        case -1 => l2
+        case i => if (l2(i)._1 == newNode) l2.drop(i+1) else l2
+      }
+
+      ( acc :+ newv, 
+        if (l1.isEmpty) l1 else newIter1, 
+        if (l2.isEmpty) l2 else newIter2 
+      )
+    }._1
+
+    LeafMap(Truncation(unionLeaves), operatedVals)
   }
 }
 
@@ -345,6 +329,6 @@ case class CollatedHistogram[K](tree: SpatialTree, densities: LeafMap[Map[K, (Pr
       fromNodeLabelMap(newMap)
     }
 
-    CollatedHistogram(tree, mrpOperate(addSiblings(densities), addSiblings(hist.densities), collatorOp))
+    CollatedHistogram(tree, mrpOperate(addSiblings(densities), addSiblings(hist.densities), collatorOp, Map.empty))
   }
 }
