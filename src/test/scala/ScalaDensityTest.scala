@@ -957,6 +957,28 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val expectedLeafMap = fromNodeLabelMap(expectedLeaves.zip(expectedDensities).toMap)
     
     val densDiffs = margHist.densityMap.vals.map(_._1).zip(expectedDensities).map{ case (a, b) => abs(a - b) }
-    assert(densDiffs.sum < 1e-10)
+
+    densDiffs.sum should be < 1e-10
+  }
+
+  it should "work with sparse trees" in {
+    val rootBox = Rectangle(Vector(0.0, 0.0), Vector(1.0, 1.0))
+    val axesToKeep = Vector(0)
+    val tree = widestSideTreeRootedAt(rootBox)
+    val nodes = Vector(2,12,59,61).map(NodeLabel(_))
+    val counts: Vector[Count] = Vector(1,1,1,1)
+    val totalCount = counts.sum
+    val leafMap = fromNodeLabelMap(nodes.zip(counts).toMap)
+    val hist = Histogram(tree, totalCount, leafMap)
+    val margHist = marginalize(hist, axesToKeep)
+
+    val expectedRootBox = Rectangle(Vector(0.0), Vector(1.0))
+    val expectedLeaves = Vector(2,12,13,15).map(NodeLabel(_))
+    val expectedVols = Vector(0.5, 0.125, 0.125, 0.125)
+    val expectedDens = Vector(0.5, 1.0, 3.0, 2.0)
+
+    margHist.tree.rootCell shouldEqual expectedRootBox
+    // margHist.densityMap.leaves shouldEqual expectedLeaves
+    margHist.densityMap.vals shouldEqual expectedDens.zip(expectedVols)
   }
 }

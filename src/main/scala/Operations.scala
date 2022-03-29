@@ -202,17 +202,67 @@ object HistogramOperations {
 
     val margTree = widestSideTreeRootedAt(marginalizeRectangle(densTree.rootCell, axesToKeep))
 
-    // Find which boxes overlap with their descendants
-    val ancToDescs = marginalized.keys.toVector
-      .flatMap(node => 
-        (1 to node.depth-1).reverse.map(i => (node, node.truncate(i)))
-      ).groupBy{ case (desc, anc) => anc }
-      .mapValues(vec => vec.map{ case (desc, anc) => desc })
+    // find the leaves in the marginalized tree,
+    // and the ancestors grouped by depth
+    val (margLeaves, margAncesAtDepth) = marginalized.keySet
+      .groupBy(_.depth).toVector.sortBy(-_._1)
+      .foldLeft((Set.empty[NodeLabel], Map.empty[Depth, Set[NodeLabel]])){
+        case ((leafAcc, ancesAtDepths), (depth, nodesAtDepth)) =>
+          val leavesAtDepth = leafAcc.map(_.truncate(depth))
+          val newLeaves = nodesAtDepth -- leavesAtDepth
+          val ancesAtDepth = depth -> (nodesAtDepth intersect leavesAtDepth)
 
-    // Add missing siblings of descendants
-    val ancToDescsWithMissing = ancToDescs.mapValues(descs =>
-      descs.union(descs.map(_.sibling)).distinct
-    )
+          (leafAcc ++ newLeaves, ancesAtDepths + ancesAtDepth)
+      }
+
+    // find the missing leaves in the marginalized tree,
+    // i.e. the ones which are not already leaves, but
+    // have an ancestor in the keys of marginalization.
+    val ancToDescsWithMissing = margAncesAtDepth.flatMap{
+      case (depth, ancesAtDepth) =>
+
+        // Finds the label for `node` if the ancestor `root` was the root node.
+        def rootAtNode(root: NodeLabel, node: NodeLabel): NodeLabel = 
+          NodeLabel(
+            ( node.lab - 
+              (root.lab << (node.depth - root.depth))
+            ).setBit(node.depth - root.depth)
+          )
+
+        // Finds the label for `node` if it's tree
+        // was grafted to `root`.
+        // Inversion of rootAtNode.
+        def descendantFromRoot(root: NodeLabel, node: NodeLabel): NodeLabel =
+          NodeLabel(
+            (root.lab << (node.depth)) + 
+            (node.lab.clearBit(node.depth))
+          )
+
+        // descendants to ancestors at the current depth
+        val descs = margLeaves.filter(node => 
+          ancesAtDepth.contains(node.truncate(depth))
+        )
+
+        // grouping descendants by their ancestor
+        val ancToDescs = ancesAtDepth.map(anc => 
+          anc -> descs.filter(desc => 
+            isAncestorOf(anc, desc)
+          )
+        )
+
+        // filling in the missing nodes by finding the minimal
+        // completion of the subtree.
+        ancToDescs.map{ case (anc, descs) =>
+          val rootedDescs = descs.map( desc => 
+            rootAtNode(anc, desc)
+          )
+          val rootedWithMissing = fromLeafSet(rootedDescs).minimalCompletion.leaves
+          val descsWithMissing = rootedWithMissing.map(rootedDesc => 
+            descendantFromRoot(anc, rootedDesc)
+          )
+          anc -> descsWithMissing
+        }
+    }
 
     // Map descendents to the sum of densities of ancestor boxes
     val descsWithDens = ancToDescsWithMissing.toVector
@@ -230,7 +280,7 @@ object HistogramOperations {
         val oldValue = mapAcc.getOrElse(descLab, (0.0, margTree.volumeAt(descLab)))
         val newValue = (oldValue._1 + descsWithDens(descLab), oldValue._2)
         mapAcc.updated(descLab, newValue)
-    }.filter{ case (lab, _) => !ancToDescs.keySet.contains(lab) }
+    }.filter{ case (lab, _) => !ancToDescsWithMissing.keySet.contains(lab) }
 
     DensityHistogram(margTree, fromNodeLabelMap(margMap))
   }
