@@ -852,7 +852,7 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
       val rootBox = Rectangle(Vector(0.0, 0.0), Vector(1.0, 1.0))
       val axesToKeep = Vector(0)
       val tree = widestSideTreeRootedAt(rootBox)
-      val nodes = Vector(4, 10, 11, 6, 14,15).map(NodeLabel(_))
+      val nodes = Vector(4, 10, 11, 6, 14, 15).map(NodeLabel(_))
       val counts: Vector[Count] = Vector(2,1,2,1,2,2)
       val totalCount = counts.sum
       val leafMap = fromNodeLabelMap(nodes.zip(counts).toMap)
@@ -936,7 +936,8 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
   }
 
   "marginalize" should "give proper density" in {
-    assert(abs(margHist.densityMap.vals.map{ case (dens, vol) => dens * vol }.sum - 1) < 1e-10 )
+    val error = abs(margHist.densityMap.vals.map{ case (dens, vol) => dens * vol }.sum - 1)
+    assert(error < 1e-10 )
   }
 
   it should "have the correct truncation" in {
@@ -945,8 +946,9 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
   }
   
   it should "have the correct volumes" in {
-    val margVols = margHist.densityMap.vals.map(_._2).distinct
-    assert(margVols === Vector(0.25))
+    val margVols = margHist.densityMap.vals.map(_._2)
+    val expectedVols = Vector(0.25, 0.25, 0.25, 0.25)
+    assert(margVols === expectedVols)
   }
 
   it should "have the correct densities" in {
@@ -956,7 +958,5 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     
     val densDiffs = margHist.densityMap.vals.map(_._1).zip(expectedDensities).map{ case (a, b) => abs(a - b) }
     assert(densDiffs.sum < 1e-10)
-
-
   }
 }
