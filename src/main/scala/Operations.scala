@@ -52,14 +52,14 @@ object TruncationOperations {
         val n2 = l2.head
         val (next, drop) = getDrop(n1, n2)
         unionHelper(
-          acc ++ next, 
+          acc ++ next.filter( !acc.contains(_) ), 
           if (drop != L2) l1.tail else l1,
           if (drop != L1) l2.tail else l2
         )
       }
     }
 
-    Truncation(unionHelper(Vector.empty, t1.leaves, t2.leaves).distinct)
+    Truncation(unionHelper(Vector.empty, t1.leaves, t2.leaves))
   }
    
   /**
