@@ -165,7 +165,9 @@ object HistogramOperations {
     * @return
     */
   def getSplitDirections(lab: NodeLabel): Vector[Int] = {
-    (0 to lab.depth - 1).toVector.map(lab.lab.testBit).map(if (_) 1 else 0)
+    (0 to lab.depth - 1).toVector.map(i => 
+      if (lab.lab.testBit(i)) 1 else 0
+    )
   }
 
   def marginalize(hist: Histogram, axesToKeep: Vector[Axis]): DensityHistogram = {
@@ -286,12 +288,15 @@ object HistogramOperations {
   }
 
   def slice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoints: Vector[Double]): DensityHistogram = {
+    slice(densHist, sliceAxes, Vectors.dense(slicePoints.toArray))
+  }
+
+  def slice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoints: MLVector): DensityHistogram = {
     
-    val mlSlicePoints = Vectors.dense(slicePoints.toArray)
-    val sliceBoxes = densHist.densityMap.truncation.leaves.map( node => 
+    val sliceBoxes = densHist.densityMap.leaves.map( node => 
       node -> marginalizeRectangle(densHist.tree.cellAt(node), sliceAxes)
     ).toMap.filter{ case (lab, rec) => 
-      rec.contains(mlSlicePoints)
+      rec.contains(slicePoints)
     }
 
     val splits = densHist.tree.splits
@@ -322,12 +327,7 @@ object HistogramOperations {
       newLab -> (densMap(oldLab)._1, slicedTree.volumeAt(newLab))
     }.toMap
 
-    val newTrunc = fromLeafSet(slicedNodeMap.keySet)
-    val missingNodes = newTrunc.minimalCompletion.leaves.toSet -- newTrunc.leaves.toSet
-
-    val slicedNodeMapWithMissing = slicedNodeMap ++ missingNodes.map( node => node -> (0.0, slicedTree.volumeAt(node)) )
-
-    DensityHistogram(slicedTree, fromNodeLabelMap(slicedNodeMapWithMissing))
+    DensityHistogram(slicedTree, fromNodeLabelMap(slicedNodeMap))
   }
 
   def toCollatedHistogram[K](hist: Histogram, key: K): CollatedHistogram[K] = {

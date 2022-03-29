@@ -846,19 +846,20 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
 class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
 
   private var margHist: DensityHistogram = null
-
+  private var denseHist: DensityHistogram = null
+  private val tn: Int => NodeLabel = NodeLabel(_)
   override protected def beforeAll(): Unit = {
-    margHist = {
-      val rootBox = Rectangle(Vector(0.0, 0.0), Vector(1.0, 1.0))
-      val axesToKeep = Vector(0)
-      val tree = widestSideTreeRootedAt(rootBox)
-      val nodes = Vector(4, 10, 11, 6, 14, 15).map(NodeLabel(_))
-      val counts: Vector[Count] = Vector(2,1,2,1,2,2)
-      val totalCount = counts.sum
-      val leafMap = fromNodeLabelMap(nodes.zip(counts).toMap)
-      val hist = Histogram(tree, totalCount, leafMap)
-      marginalize(hist, axesToKeep)
-    }
+    val rootBox = Rectangle(Vector(0.0, 0.0), Vector(1.0, 1.0))
+    val axesToKeep = Vector(0)
+    val tree = widestSideTreeRootedAt(rootBox)
+    val nodes = Vector(4, 10, 11, 6, 14, 15).map(NodeLabel(_))
+    val counts: Vector[Count] = Vector(2,1,2,1,2,2)
+    val totalCount = counts.sum
+    val leafMap = fromNodeLabelMap(nodes.zip(counts).toMap)
+    val hist = Histogram(tree, totalCount, leafMap)
+    margHist = marginalize(hist, axesToKeep)
+    
+    denseHist = toDensityHistogram(hist)
   }
 
   "rpUnion" should "generate only the leaves of the unioned tree" in {
@@ -980,5 +981,57 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     margHist.tree.rootCell shouldEqual expectedRootBox
     // margHist.densityMap.leaves shouldEqual expectedLeaves
     margHist.densityMap.vals shouldEqual expectedDens.zip(expectedVols)
+  }
+
+  "slice" should "have the correct truncation" in {
+    val sliceAxes = Vector(0)
+    val slicePoints = Vectors.dense(0.6)
+    val sliceHist = slice(denseHist, sliceAxes, slicePoints)
+
+    val expectedTrunc = Truncation(Vector(2,3).map(tn))
+    sliceHist.densityMap.truncation shouldEqual expectedTrunc
+  }
+
+  it should "have the correct volumes" in {
+    val sliceAxes = Vector(0)
+    val slicePoints = Vectors.dense(0.6)
+    val sliceHist = slice(denseHist, sliceAxes, slicePoints)
+
+    val expectedVols = Vector(0.5, 0.5)
+    val sliceVols = sliceHist.densityMap.vals.map{ case (_, vol) => vol }
+    sliceVols shouldEqual expectedVols
+  }
+
+  it should "have the correct densities" in {
+    val sliceAxes = Vector(0)
+    val slicePoints = Vectors.dense(0.6)
+    val sliceHist = slice(denseHist, sliceAxes, slicePoints)
+
+    val expectedDensities = Vector(0.4, 1.6)
+    val sliceDensities = sliceHist.densityMap.vals.map{ case (dens, _) => dens }
+    sliceDensities shouldEqual expectedDensities
+  }
+
+  it should "work with sparse trees" in {
+    val leaves = Vector(2,12,59,61).map(tn)
+    val vals: Vector[Count] = Vector(1,1,1,1)
+    val totalCount = vals.sum
+    val rootBox = Rectangle(Vector(0.0,0.0), Vector(1.0,1.0))
+    val tree = widestSideTreeRootedAt(rootBox)
+    val hist = Histogram(tree, totalCount, fromNodeLabelMap((leaves zip vals).toMap))
+    val densHist = toDensityHistogram(hist)
+
+    val sliceAxes = Vector(0)
+    val slicePoints = Vectors.dense(0.7)
+    val sliceHist = slice(densHist, sliceAxes, slicePoints)
+
+    val expectedRootBox = Rectangle(Vector(0.0), Vector(1.0))
+    val expectedLeaves = Vector(2,7).map(tn)
+    val expectedVols = Vector(0.5, 0.25)
+    val expectedDens = Vector(2.0, 8.0)
+
+    sliceHist.tree.rootCell shouldEqual expectedRootBox
+    sliceHist.densityMap.leaves shouldEqual expectedLeaves
+    sliceHist.densityMap.vals shouldEqual (expectedDens zip expectedVols)
   }
 }
