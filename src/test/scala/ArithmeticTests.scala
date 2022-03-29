@@ -206,4 +206,47 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     sliceHist.densityMap.leaves shouldEqual expectedLeaves
     sliceHist.densityMap.vals shouldEqual (expectedDens zip expectedVols)
   }
+
+  {
+    val rootBox = Rectangle(Vector(0.0, 0.0), Vector(1.0, 1.0))
+    val hist1 = Histogram(
+      widestSideTreeRootedAt(rootBox),
+      10L,
+      LeafMap(Truncation(Vector(8,3) map tn), Vector(3L, 7L))
+    )
+    val hist2 = Histogram(
+      widestSideTreeRootedAt(rootBox),
+      4L,
+      LeafMap(Truncation(Vector(4,31) map tn), Vector(2L, 2L))
+    )
+
+    val collHist = toCollatedHistogram(hist1, "1").collate(hist2, "2")
+
+    val expectedLeaves = Vector(8,9,6,14,30,31) map tn
+    val expectedVols = Vector(0.125, 0.125, 0.25, 0.125, 0.0625, 0.0625)
+    val expectedDens1 = Vector(2.4, 0.0, 1.4, 1.4, 1.4, 1.4)
+    val expectedDens2 = Vector(2.0, 2.0, 0.0, 0.0, 0.0, 8.0)
+    val expectedKeyset = Set("1", "2")
+
+    "CollatedHistogram" should "have the correct keys" in {
+      collHist.keySet shouldEqual expectedKeyset
+    }
+
+    it should "have the correct leaves" in {
+      collHist.densities.leaves shouldEqual expectedLeaves
+    }
+
+    it should "have the correct volumes" in {
+      val collVols = collHist.densities.vals.map(densMap => densMap.values.map{ case (_, vol) => vol }.toVector.distinct)
+      collVols shouldEqual expectedVols.map(Vector(_))
+    }
+
+    it should "have the correct densities" in {
+      val collDenses1 = collHist.densities.vals.map(densMap => densMap("1")._1)
+      val collDenses2 = collHist.densities.vals.map(densMap => densMap("2")._1)
+      
+      collDenses1 shouldEqual expectedDens1
+      collDenses2 shouldEqual expectedDens2
+    }
+  }
 }
