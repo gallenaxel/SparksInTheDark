@@ -240,16 +240,13 @@ case class CollatedHistogram[K](tree: SpatialTree, densities: LeafMap[Map[K, (Pr
 
   val keySet = densities.vals.head.keySet
 
-  private def collatorOp(kv1: MapType, kv2: MapType): MapType = {
-    if (kv1.valuesIterator.contains((0.0, Double.MaxValue))) {
-      val newKeys = kv1.keySet -- kv2.keySet
-      kv2 ++ (newKeys.map(key => key -> (0.0, 0.0)))
-    } else if (kv2.valuesIterator.contains((0.0, Double.MaxValue))) {
-      val newKeys = kv2.keySet -- kv1.keySet
-      kv1 ++ (newKeys.map(key => key -> (0.0, 0.0)))
-    } else {
+  private def collatorOp(allKeys: Set[K])(kv1: MapType, kv2: MapType): MapType = {
+    if (kv1.isEmpty)
+      kv2 ++ ((allKeys -- kv2.keySet).map(key => key -> (0.0, 0.0)))
+    else if (kv2.isEmpty)
+      kv1 ++ ((allKeys -- kv1.keySet).map(key => key -> (0.0, 0.0)))
+    else 
       kv1 ++ kv2
-    }
   }
 
   def collate(hist: Histogram, key: K): CollatedHistogram[K] = {
@@ -267,23 +264,10 @@ case class CollatedHistogram[K](tree: SpatialTree, densities: LeafMap[Map[K, (Pr
     if (tree != hist.tree)
       throw new IllegalArgumentException("Collated histograms must have the same root box.")
 
-    // def addSiblings(density: LeafMap[MapType]): LeafMap[MapType] = {
-    //   val leaves = density.leaves
-    //   val missingSiblings = leaves.map(_.sibling).toSet -- leaves
-    //   val keys = density.vals.head.keySet
-    //   val missingMap = missingSiblings.map{ node => 
-    //     val vol = tree.volumeAt(node)
-    //     node -> keys.map(_ -> (0.0, vol)).toMap
-    //   }
-      
-    //   val newMap = density.toMap ++ missingMap
-    //   fromNodeLabelMap(newMap)
-    // }
+    val allKeys = keySet union hist.keySet
+    val base: MapType = Map.empty
 
-    // CollatedHistogram(tree, mrpOperate(addSiblings(densities), addSiblings(hist.densities), collatorOp, Map.empty))
-    val baseMap = (keySet union hist.keySet).map(key => key -> (0.0, Double.MaxValue)).toMap
-
-    val collatedDensityMap = mrpOperate(densities, hist.densities, collatorOp, baseMap)
+    val collatedDensityMap = mrpOperate(densities, hist.densities, collatorOp(allKeys), base)
     CollatedHistogram(tree, collatedDensityMap.copy(vals = collatedDensityMap.toIterable.toVector.map{ case (node, densMap) =>
       val correctVol = tree.volumeAt(node)
       densMap.mapValues{ case (dens, vol) => (dens, correctVol)}  
