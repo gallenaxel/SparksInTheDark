@@ -268,9 +268,14 @@ case class CollatedHistogram[K](tree: SpatialTree, densities: LeafMap[Map[K, (Pr
     val base: MapType = Map.empty
 
     val collatedDensityMap = mrpOperate(densities, hist.densities, collatorOp(allKeys), base)
-    CollatedHistogram(tree, collatedDensityMap.copy(vals = collatedDensityMap.toIterable.toVector.map{ case (node, densMap) =>
-      val correctVol = tree.volumeAt(node)
-      densMap.mapValues{ case (dens, vol) => (dens, correctVol)}  
-    }))
+    CollatedHistogram(
+      tree, 
+      collatedDensityMap.copy(
+        vals = collatedDensityMap.toIterable.toVector.map{ case (node, densMap) =>
+          val correctVol = tree.volumeAt(node)
+          densMap.mapValues{ case (dens, vol) => (dens, correctVol)
+        }  
+      })
+    )
   }
 }
