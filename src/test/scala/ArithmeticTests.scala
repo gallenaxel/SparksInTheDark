@@ -14,6 +14,9 @@ import co.wiklund.disthist.HistogramFunctions._
 import co.wiklund.disthist.TruncationFunctions._
 
 class ArithmeticTests extends FlatSpec with Matchers {
+
+  val tn: Int => NodeLabel = NodeLabel(_)
+
   "rpUnion" should "generate only the leaves of the unioned tree" in {
     val nodes1 = Vector(8,9,5,3).map(NodeLabel(_))
     val trunc1 = Truncation(nodes1)
@@ -22,6 +25,14 @@ class ArithmeticTests extends FlatSpec with Matchers {
     val unioned = rpUnion(trunc1, trunc2)
     val expectedLeaves = Vector(8,9,10,11,3)
     assert(unioned.leaves.map(_.lab) === expectedLeaves)
+  }
+
+  it should "work with several levels of ancestry" in {
+    val t1 = rootTruncation
+    val t2 = Truncation(Vector(5,6).map(tn))
+    val union = rpUnion(t1, t2)
+    val expectedLeaves = Vector(4,5,6,7)
+    assert(union.leaves.map(_.lab) === expectedLeaves) 
   }
 
   it should "work with sparse trees" in {
@@ -61,6 +72,23 @@ class ArithmeticTests extends FlatSpec with Matchers {
     assert(result === result2)
     assert(result.truncation === expectedTrunc)
     assert(result.vals.zip(expectedVals).forall{ case (x,y) => math.abs(x - y) < 1e-10})
+  }
+
+  it should "work with several levels of ancestry" in {
+    val t1 = rootTruncation
+    val v1 = Vector(1)
+    val leafMap1 = LeafMap(t1, v1)
+    val t2 = Truncation(Vector(5,6).map(tn))
+    val v2 = Vector(1,2)
+    val leafMap2 = LeafMap(t2, v2)
+    val op = (x: Int, y: Int) => x + y
+
+    val expectedLeaves = Vector(4,5,6,7)
+    val expectedVals = Vector(1,2,3,1)
+
+    val result = mrpOperate(leafMap1, leafMap2, op, 0)
+    assert(result.leaves.map(_.lab) === expectedLeaves) 
+    assert(result.vals === expectedVals)
   }
 
   it should "work with sparse trees" in {

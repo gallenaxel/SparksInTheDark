@@ -267,14 +267,18 @@ object TruncationFunctions {
       if (n1 == n2)
         (Vector(n1), Both)
       else if (isAncestorOf(n2, n1))
-        ((n1 +: n1.sibling +: n1.ancestors.take(n1.depth - n2.depth - 1).map(_.sibling).toVector).sorted(leftRightOrd), Both)
+        ((n1 +: n1.sibling +: n1.ancestors.take(n1.depth - n2.depth - 1).map(_.sibling).toVector).sorted(leftRightOrd), L1)
       else if (isAncestorOf(n1, n2))
-        ((n2 +: n2.sibling +: n2.ancestors.take(n2.depth - n1.depth - 1).map(_.sibling).toVector).sorted(leftRightOrd), Both)
+        ((n2 +: n2.sibling +: n2.ancestors.take(n2.depth - n1.depth - 1).map(_.sibling).toVector).sorted(leftRightOrd), L2)
       else if (isLeftOf(n1, n2))
         (Vector(n1), L1)
       else
         (Vector(n2), L2)
     }
+
+    def combineWithoutAncestry(l1: Vector[NodeLabel], l2: Vector[NodeLabel]): Vector[NodeLabel] = 
+      l1.filter(n1 => l2.forall(n2 => n2.truncate(n1.depth) != n1)) ++
+      l2.filter(n2 => l1.forall(n1 => n1.truncate(n2.depth) != n2))
 
     @scala.annotation.tailrec
     def unionHelper(
@@ -283,21 +287,23 @@ object TruncationFunctions {
       l2: Vector[NodeLabel]
     ): Vector[NodeLabel] = {
       if (l1.isEmpty)
-        acc ++ l2
+        combineWithoutAncestry(acc, l2.filter( n => !acc.contains(n) ))
       else if (l2.isEmpty)
-        acc ++ l1
+        combineWithoutAncestry(acc, l1.filter( n => !acc.contains(n) ))
       else {
         val n1 = l1.head
         val n2 = l2.head
         val (next, drop) = getDrop(n1, n2)
         unionHelper(
-          acc ++ next.filter( !acc.contains(_) ), 
+          combineWithoutAncestry(acc, next.filter( n => !acc.contains(n) )),
           if (drop != L2) l1.tail else l1,
           if (drop != L1) l2.tail else l2
         )
       }
     }
 
-    Truncation(unionHelper(Vector.empty, t1.leaves, t2.leaves))
+    val unionNodes = unionHelper(Vector.empty, t1.leaves, t2.leaves).toStream
+    val res = unionNodes.toVector
+    Truncation(res)
   }
 }
