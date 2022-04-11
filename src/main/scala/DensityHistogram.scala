@@ -17,8 +17,9 @@ case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability,
     val probSum = densityMap.vals.map{ case (prob, _) => 
       prob 
     }.sum
+    val totalVol = tree.volumeTotal
     val normVals = densityMap.vals.map{ case (prob, vol) =>
-      (prob / (vol * probSum), vol)
+      (prob * totalVol / (vol * probSum), vol)
     }
     copy(densityMap = densityMap.copy(vals = normVals))
   }
