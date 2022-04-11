@@ -2,9 +2,8 @@ name := "disthist"
 
 version := "0.1.0"
 
-// scalaVersion in ThisBuild := "2.11.8"
-ThisBuild / scalaVersion := "2.11.12"
-scalaVersion := "2.11.12"
+ThisBuild / scalaVersion := "2.12.15"
+scalaVersion := "2.12.15"
 
 //ivyScala := ivyScala.value map { _.copy(overrideScalaVersion = true) }
 
@@ -16,8 +15,8 @@ scalacOptions := Seq("-unchecked", "-deprecation", "-feature")
 // parallelExecution in test := false
 test / parallelExecution := false
 
-libraryDependencies += "org.apache.spark" %% "spark-sql" % "2.2.0" // % "provided"
-libraryDependencies += "org.apache.spark" %% "spark-mllib" % "2.2.0" // % "provided"
+libraryDependencies += "org.apache.spark" %% "spark-sql" % "3.1.2" // % "provided"
+libraryDependencies += "org.apache.spark" %% "spark-mllib" % "3.1.2" // % "provided"
 // libraryDependencies += "org.vegas-viz" %% "vegas" % "0.3.11"
 // libraryDependencies += "org.scalaz" %% "scalaz-core" % "7.2.16"
 
