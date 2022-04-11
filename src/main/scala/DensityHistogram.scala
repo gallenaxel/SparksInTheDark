@@ -29,11 +29,12 @@ object HistogramFunctions {
     val counts = hist.counts
     val tree = hist.tree
     val totalCount = hist.totalCount
+    val totalVolume = tree.rootCell.volume
 
     val densitiesWithVolumes = counts.toIterable.map {
       case (lab, c) => 
         val vol = tree.volumeAt(lab)
-        (lab, (c/(totalCount * vol), vol))
+        (lab, (c * totalVolume / (totalCount * vol), vol))
     }.toMap
 
     DensityHistogram(tree, fromNodeLabelMap(densitiesWithVolumes))
@@ -126,7 +127,7 @@ object HistogramFunctions {
             ).setBit(node.depth - root.depth)
           )
 
-        // Finds the label for `node` if it's tree
+        // Finds the label for `node` if its tree
         // was grafted to `root`.
         // Inversion of rootAtNode.
         def descendantFromRoot(root: NodeLabel, node: NodeLabel): NodeLabel =
