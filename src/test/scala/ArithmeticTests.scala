@@ -5,6 +5,7 @@ import scala.math.abs
 
 import org.scalatest.{ path => testPath, _ }
 import org.scalactic.TolerantNumerics
+import org.scalactic.TripleEquals._
 
 import co.wiklund.disthist._
 import co.wiklund.disthist.Types._
@@ -179,8 +180,35 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val expectedDens = Vector(0.5, 1.0, 3.0, 2.0)
 
     margHist.tree.rootCell shouldEqual expectedRootBox
-    // margHist.densityMap.leaves shouldEqual expectedLeaves
+    margHist.densityMap.leaves shouldEqual expectedLeaves
     margHist.densityMap.vals shouldEqual expectedDens.zip(expectedVols)
+  }
+
+  it should "work with non-unit-cube domain" in {
+    val rootBox = Rectangle(Vector(0.0, 0.0), Vector(2.0, 1.0))
+    val axesToKeep = Vector(0)
+    val hist = Histogram(
+      widestSideTreeRootedAt(rootBox),
+      6L,
+      LeafMap(Truncation(Vector(8,19,3) map tn), Vector(2L, 3L, 1L))
+    )
+
+    val densHist = toDensityHistogram(hist)
+    (densHist.densityMap.vals.map{ case (dens, vol) => dens * vol }.sum - 1.0) should be < 1e-10
+
+    val margHist = marginalize(densHist, axesToKeep)
+
+    val expectedRootBox = Rectangle(Vector(0.0), Vector(2.0))
+    val expectedLeaves = Vector(8,9,3) map tn
+    val expectedVols = Vector(0.25, 0.25, 1.0)
+    val expectedDens = Vector(4.0, 16.0, 1.0).map(_ / 6)
+
+    val densityError = margHist.densityMap.vals.map{ case (dens, vol) => dens * vol }.sum - 1.0
+
+    margHist.tree.rootCell shouldEqual expectedRootBox
+    margHist.densityMap.leaves shouldEqual expectedLeaves
+    margHist.densityMap.vals shouldEqual expectedDens.zip(expectedVols)
+    densityError should be < 1e-10
   }
 
   "slice" should "have the correct truncation" in {
@@ -233,6 +261,35 @@ class OperationTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     sliceHist.tree.rootCell shouldEqual expectedRootBox
     sliceHist.densityMap.leaves shouldEqual expectedLeaves
     sliceHist.densityMap.vals shouldEqual (expectedDens zip expectedVols)
+  }
+
+  {
+    val rootBox = Rectangle(Vector(0.0, 0.0), Vector(2.0, 1.0))
+    val hist = Histogram(
+      widestSideTreeRootedAt(rootBox),
+      6L,
+      LeafMap(Truncation(Vector(8,19,3) map tn), Vector(2L, 3L, 1L))
+    )
+
+    val densHist = toDensityHistogram(hist)
+
+    "toDensityHistogram" should "yield density" in {
+      val totalVol = densHist.tree.volumeTotal
+      val error = densHist.densityMap.vals.map{ case (dens, vol) => dens * vol }.sum - 1.0
+      abs(error) should be < 1e-10
+    }
+
+    "normalize" should "not change normalized histogram" in {
+      val normalized = densHist.normalize
+
+      val absDiff: ((Probability, Probability)) => Probability = { case (x, y) => abs(x - y) }
+      val densDiff = (normalized.densityMap.vals.map(_._1) zip densHist.densityMap.vals.map(_._1)).map(absDiff).sum
+      
+      normalized.tree shouldEqual densHist.tree
+      normalized.densityMap.truncation shouldEqual densHist.densityMap.truncation
+      normalized.densityMap.vals.map(_._2) shouldEqual densHist.densityMap.vals.map(_._2)
+      densDiff should be < 1e-10
+    }
   }
 
   {

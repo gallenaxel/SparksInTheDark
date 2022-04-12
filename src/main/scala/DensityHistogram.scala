@@ -14,14 +14,14 @@ case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability,
     densityMap.query(tree.descendBox(v))._2.getOrElse((0.0, 0.0))._1
 
   def normalize: DensityHistogram = {
-    val probSum = densityMap.vals.map{ case (prob, _) => 
-      prob 
+    val integral = densityMap.vals.map{ case (dens, vol) => 
+      dens * vol
     }.sum
-    val totalVol = tree.volumeTotal
-    val normVals = densityMap.vals.map{ case (prob, vol) =>
-      (prob * totalVol / (vol * probSum), vol)
+    val normVals = densityMap.vals.map{ case (dens, vol) =>
+      (dens / integral, vol)
     }
     copy(densityMap = densityMap.copy(vals = normVals))
+    DensityHistogram(this.tree, this.densityMap.copy(vals = normVals))
   }
 }
 
@@ -33,9 +33,9 @@ object HistogramFunctions {
     val totalVolume = tree.rootCell.volume
 
     val densitiesWithVolumes = counts.toIterable.map {
-      case (lab, c) => 
-        val vol = tree.volumeAt(lab)
-        (lab, (c * totalVolume / (totalCount * vol), vol))
+      case (node, c) => 
+        val vol = tree.volumeAt(node)
+        (node, (c / (totalCount * vol), vol))
     }.toMap
 
     DensityHistogram(tree, fromNodeLabelMap(densitiesWithVolumes))
