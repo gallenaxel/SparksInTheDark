@@ -174,24 +174,30 @@ object LeafMapFunctions {
     val unionLeaves = rpUnion(leafMap1.truncation, leafMap2.truncation).leaves
 
     val operatedVals = unionLeaves.foldLeft((Vector.empty[A], leafMap1.leaves zip leafMap1.vals, leafMap2.leaves zip leafMap2.vals)){ case ((acc, l1, l2), newNode) => 
-      val v1OptIndex = l1.indexWhere{ case(node, _) => node == newNode || isAncestorOf(node, newNode) }
-      val v2OptIndex = l2.indexWhere{ case(node, _) => node == newNode || isAncestorOf(node, newNode) }
+      val v1OptIndex = l1.indexWhere{ case(node, _) => node == newNode || isAncestorOf(node, newNode) } match {
+        case -1 => None
+        case i  => Some(i)
+      }
+      val v2OptIndex = l2.indexWhere{ case(node, _) => node == newNode || isAncestorOf(node, newNode) } match {
+        case -1 => None
+        case i  => Some(i)
+      }
 
       val newv = (v1OptIndex, v2OptIndex) match {
-        case (i, -1) => op(l1(i)._2, base)
-        case (-1, i) => op(base, l2(i)._2)
-        case (i, k) => op(l1(i)._2, l2(k)._2)
-        case _ => throw new IllegalArgumentException("should not happen")
+        case (Some(i), None) => op(l1(i)._2, base)
+        case (None, Some(i)) => op(base, l2(i)._2)
+        case (Some(i), Some(k)) => op(l1(i)._2, l2(k)._2)
+        case _ => throw new IllegalArgumentException(s"should not happen \n attempted to operate on ${l1.map(_._1).take(1000)} and \n ${l2.map(_._1).take(1000)} \n with newNode $newNode")
       }
 
       def newIter1 = v1OptIndex match {
-        case -1 => l1
-        case i => if (l1(i)._1 == newNode) l1.drop(i+1) else l1
+        case None => l1
+        case Some(i) => if (l1(i)._1 == newNode) l1.drop(i+1) else l1
       }
 
       def newIter2 = v2OptIndex match {
-        case -1 => l2
-        case i => if (l2(i)._1 == newNode) l2.drop(i+1) else l2
+        case None => l2
+        case Some(i) => if (l2(i)._1 == newNode) l2.drop(i+1) else l2
       }
 
       ( acc :+ newv, 
