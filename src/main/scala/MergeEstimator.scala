@@ -92,8 +92,9 @@ object MergeEstimatorFunctions {
     var stepSize = bulkStepSize
     var tmpDS = countedDS.cache
     var currentDepth = tmpDS.first._1.depth
-    var lastCount = tmpDS.count + 1
-    while (currentDepth > 1 && tmpDS.count < lastCount) {
+    val initialCount = tmpDS.count
+    var lastCount = initialCount
+    while (currentDepth > 1 && (tmpDS.count < lastCount || lastCount == initialCount)) {
       while (currentDepth <= stepSize) stepSize /= 2
 
       lastCount = tmpDS.count
