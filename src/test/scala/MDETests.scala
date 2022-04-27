@@ -88,7 +88,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
 
     val countLimit = countedDS.map(_._2).collect.max
     val stepSize = 4
-    val mergedDS = mergeLeaves(tree, countedDS, countLimit, stepSize, checkpointDir + "/merged", true)
+    val mergedDS = mergeLeaves(tree, countedDS, countLimit, stepSize, checkpointDir + "/merged")
     val numLeavesAboveLimit = mergedDS.filter(_._2 > countLimit).count
     numLeavesAboveLimit shouldEqual 0
   }
@@ -97,7 +97,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val spark = getSpark
     import spark.implicits._
     val mergedHist = collectHistogram(tree, spark.read.parquet(checkpointDir + "/merged").as[(NodeLabel, Count)])
-    val mdeHist = getMDE(mergedHist, valDS, 10, true)
+    val mdeHist = getMDE(mergedHist, valDS, 10)
 
     mdeHist.counts.vals.sum shouldEqual dfnum
   }
