@@ -123,15 +123,16 @@ object MDEFunctions {
     if (verbose) println("--- Computing validation data histogram ---")
     val maxCrpDepth = crp.densities.leaves.map(_.depth).max
     val crpLeafSet = crp.densities.leaves.toSet
+    val crpLeafMap = crp.densities.copy(vals = Stream.continually(0).take(crp.densities.leaves.length).toVector)
     val truncatedValData = validationDS.groupByKey{ case (node, _) => node.truncate(maxCrpDepth) }.mapGroups{ case (anc, nodesAndCounts) => (anc, nodesAndCounts.map{ case (_, count) => count}.sum) }
     val valHist = Histogram(
       hist.tree,
       truncatedValData.map(_._2).reduce(_+_),
       fromNodeLabelMap(
-        { leafSet: Set[NodeLabel] =>
-          truncatedValData.groupByKey(node => (node._1 #:: node._1.ancestors).toSet.intersect(leafSet).head)
+        { leafMap: LeafMap[_] =>
+          truncatedValData.groupByKey(node => leafMap.query((node._1 #:: node._1.ancestors).reverse)._1)
             .mapGroups{ case (node, nodesAndCounts) => (node, nodesAndCounts.map(_._2).sum) }
-        }.apply(crpLeafSet)
+        }.apply(crpLeafMap)
         .collect.toMap
       )
     )
