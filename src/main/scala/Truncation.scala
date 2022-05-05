@@ -258,6 +258,22 @@ object TruncationFunctions {
   }
   import DropHead._
 
+  def rpUnionNested(finer: Truncation, coarser: Truncation): Truncation = {
+
+    val ascsAndDescs = coarser.leaves.map( leaf => leaf -> finer.leaves.filter(maybeDesc => isAncestorOf(leaf, maybeDesc)) )
+    val withMissingDescs = ascsAndDescs.flatMap{ case (asc, descs) =>
+      if (descs.isEmpty) 
+        Vector(asc)
+      else
+        Truncation(descs.map(rootAtNode(asc, _)))
+          .minimalCompletion
+          .leaves.map(descendantFromRoot(asc, _))
+    }
+
+    fromLeafSet(withMissingDescs)
+
+  }
+
   /**
     * The leaves of the tree resulting from `RPUnion(t1, t2)`
     */

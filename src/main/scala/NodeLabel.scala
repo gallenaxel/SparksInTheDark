@@ -171,6 +171,26 @@ object NodeLabelFunctions {
   }
 
   type Walk = Stream[NodeLabel]
+
+  // Finds the label for `node` if the ancestor `root` was the root node.
+  def rootAtNode(root: NodeLabel, node: NodeLabel): NodeLabel = 
+    NodeLabel(
+      ( node.lab - 
+        (root.lab << (node.depth - root.depth))
+      ).setBit(node.depth - root.depth)
+    )
+
+  /*
+    Finds the label for `node` if its tree
+    was grafted to `root`.
+    Inversion of rootAtNode.
+  */
+  def descendantFromRoot(root: NodeLabel, node: NodeLabel): NodeLabel =
+    NodeLabel(
+      (root.lab << (node.depth)) + 
+      (node.lab.clearBit(node.depth))
+    )
+
 }
 
 import NodeLabelFunctions._

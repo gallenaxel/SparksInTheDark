@@ -169,9 +169,17 @@ object LeafMapFunctions {
     leafMap.copy(vals = leafMap.vals.map(f))
   }
 
-  def mrpOperate[A:ClassTag](leafMap1: LeafMap[A], leafMap2: LeafMap[A], op: (A, A) => A, base: A): LeafMap[A] = {
+  def mrpOperate[A:ClassTag](leafMap1: LeafMap[A], leafMap2: LeafMap[A], op: (A, A) => A, base: A, nested: Boolean = false): LeafMap[A] = {
 
-    val unionLeaves = rpUnion(leafMap1.truncation, leafMap2.truncation).leaves
+    val unionLeaves = if (nested) {
+      val (finer, coarser) = if (leafMap1.leaves.length > leafMap2.leaves.length)
+        (leafMap1.truncation, leafMap2.truncation)
+      else
+        (leafMap2.truncation, leafMap1.truncation)
+      
+      rpUnionNested(finer, coarser).leaves
+    } else 
+      rpUnion(leafMap1.truncation, leafMap2.truncation).leaves
 
     val operatedVals = unionLeaves.foldLeft((Vector.empty[A], leafMap1.leaves zip leafMap1.vals, leafMap2.leaves zip leafMap2.vals)){ case ((acc, l1, l2), newNode) => 
       val v1OptIndex = l1.indexWhere{ case(node, _) => node == newNode || isAncestorOf(node, newNode) } match {

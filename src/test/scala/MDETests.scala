@@ -97,7 +97,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val spark = getSpark
     import spark.implicits._
     val mergedHist = collectHistogram(tree, spark.read.parquet(checkpointDir + "/merged").as[(NodeLabel, Count)])
-    val mdeHist = getMDE(mergedHist, valDS, 10)
+    val mdeHist = getMDE(mergedHist, valDS, 5, true)
 
     mdeHist.counts.vals.sum shouldEqual dfnum
   }

@@ -42,7 +42,7 @@ object MDEFunctions {
     if (verbose) print(s"progress: ${spacedCRPs.head.keySet.toVector.head}")
     val mergedCRPs = spacedCRPs.reduce[CollatedHistogram[String]]{ case (h1, h2) =>
       if (verbose) print(s", ${h2.keySet.toVector.head}")
-      h1 collate h2
+      h1 collateNested h2
     }
     if (verbose) println
     mergedCRPs

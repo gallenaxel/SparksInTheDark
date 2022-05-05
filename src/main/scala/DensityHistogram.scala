@@ -120,23 +120,6 @@ object HistogramFunctions {
     val ancToDescsWithMissing = margAncesAtDepth.flatMap{
       case (depth, ancesAtDepth) =>
 
-        // Finds the label for `node` if the ancestor `root` was the root node.
-        def rootAtNode(root: NodeLabel, node: NodeLabel): NodeLabel = 
-          NodeLabel(
-            ( node.lab - 
-              (root.lab << (node.depth - root.depth))
-            ).setBit(node.depth - root.depth)
-          )
-
-        // Finds the label for `node` if its tree
-        // was grafted to `root`.
-        // Inversion of rootAtNode.
-        def descendantFromRoot(root: NodeLabel, node: NodeLabel): NodeLabel =
-          NodeLabel(
-            (root.lab << (node.depth)) + 
-            (node.lab.clearBit(node.depth))
-          )
-
         // descendants to ancestors at the current depth
         val descs = margLeaves.filter(node => 
           ancesAtDepth.contains(node.truncate(depth))
@@ -255,11 +238,23 @@ case class CollatedHistogram[K](tree: SpatialTree, densities: LeafMap[Map[K, (Pr
     collate(toCollatedHistogram(hist, key))
   }
 
+  def collateNested(hist: Histogram, key: K): CollatedHistogram[K] = {
+    collate(toCollatedHistogram(hist, key), true)
+  }
+
   def collate(hist: DensityHistogram, key: K): CollatedHistogram[K] = {
     collate(toCollatedHistogram(hist, key))
   }
 
-  def collate(hist: CollatedHistogram[K]): CollatedHistogram[K] = {
+  def collateNested(hist: DensityHistogram, key: K): CollatedHistogram[K] = {
+    collate(toCollatedHistogram(hist, key), true)
+  }
+
+  def collateNested(hist: CollatedHistogram[K]): CollatedHistogram[K] = {
+    collate(hist, true)
+  }
+
+  def collate(hist: CollatedHistogram[K], nested: Boolean = false): CollatedHistogram[K] = {
     if (keySet.intersect(hist.keySet).nonEmpty)
       throw new IllegalArgumentException(s"keySets are not allowed to intersect. The common keys are ${keySet intersect hist.keySet}.")
 
@@ -269,7 +264,7 @@ case class CollatedHistogram[K](tree: SpatialTree, densities: LeafMap[Map[K, (Pr
     val allKeys = keySet union hist.keySet
     val base: MapType = Map.empty
 
-    val collatedDensityMap = mrpOperate(densities, hist.densities, collatorOp(allKeys), base)
+    val collatedDensityMap = mrpOperate(densities, hist.densities, collatorOp(allKeys), base, nested)
     CollatedHistogram(
       tree, 
       collatedDensityMap.copy(
