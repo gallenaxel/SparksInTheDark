@@ -1,5 +1,5 @@
 /**************************************************************************
- * Copyright 2017 Tilo Wiklund
+ * Copyright 2017 Tilo Wiklund, 2022 Johannes Graner
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,6 +54,15 @@ case class CachedUnfoldTree[A]( base : A,
 }
 
 object UnfoldTreeFunctions {
+  /**
+    * Labeled partition tree
+    *
+    * @param base root box
+    * @param left sub-box when going left in node tree
+    * @param right sub-box when going right in node tree
+    * @param lab node to evaluate at
+    * @return sub-box at evaluated node
+    */
   def unfoldTree[A](base : A)(left : (NodeLabel, A) => A, right : (NodeLabel, A) => A)(lab : NodeLabel) : A = {
     if(lab == rootLabel) {
       base
@@ -63,7 +72,15 @@ object UnfoldTreeFunctions {
       right(lab, unfoldTree(base)(left, right)(lab.parent))
     }
   }
-
+  /**
+    * Labeled partition tree with internal cache
+    *
+    * @param base root box
+    * @param left sub-box when going left in node tree
+    * @param right sub-box when going right in node tree
+    * @param lab node to evaluate at
+    * @return sub-box at evaluated node
+    */
   def unfoldTreeCached[A](base : A)(left : (NodeLabel, A) => A, right : (NodeLabel, A) => A) : CachedUnfoldTree[A] =
     CachedUnfoldTree(base, Map.empty, left, right)
 }

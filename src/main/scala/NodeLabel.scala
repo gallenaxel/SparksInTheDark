@@ -1,5 +1,5 @@
 /**************************************************************************
- * Copyright 2017 Tilo Wiklund
+ * Copyright 2017 Tilo Wiklund, 2022 Johannes Graner
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@ import Types._
 case class NodeLabel(lab : BigInt) extends Serializable {
   private val rootLabel : BigInt = 1
 
-  def    left() : NodeLabel = NodeLabel(2*lab)
-  def   right() : NodeLabel = NodeLabel(2*lab + 1)
+  def    left() : NodeLabel = NodeLabel(lab << 1)
+  def   right() : NodeLabel = NodeLabel((lab << 1).flipBit(0))
   def isRight() : Boolean   =  lab.testBit(0)
   def  isLeft() : Boolean   = !lab.testBit(0)
 
@@ -34,7 +34,8 @@ case class NodeLabel(lab : BigInt) extends Serializable {
   def ancestor(level : Int) : NodeLabel = NodeLabel(lab >> level)
   def parent() : NodeLabel = ancestor(1)
   def sibling() : NodeLabel =
-    if(isLeft()) parent().right else parent().left
+    NodeLabel(lab.flipBit(0))
+    // if(isLeft()) parent().right else parent().left
 
   def children() : Set[NodeLabel] =
     Set(left(), right())
@@ -43,13 +44,45 @@ case class NodeLabel(lab : BigInt) extends Serializable {
     Stream.iterate(this)({_.parent}).takeWhile(_.lab >= rootLabel).tail
 
   def depth() : Depth = lab.bitLength - 1
+
+  /**
+    * Ancestor at level `toDepth`
+    */
   def truncate(toDepth : Depth) : NodeLabel = {
     val fromDepth = depth()
     if(toDepth >= fromDepth) this else ancestor(fromDepth - toDepth)
   }
 
-  def lefts() : Stream[Boolean] = ((0 to depth()) map (lab.testBit(_))).toStream
-  def rights() : Stream[Boolean] = ((0 to depth()) map (!lab.testBit(_))).toStream
+  /**
+    * Path to node, appended by `false`
+    * 
+    * Ex. `NodeLabel(5).rights = Stream(false, true, false)`
+    * ```
+    *   0
+    *    \
+    *     1
+    *    / \
+    *   2   3
+    *  / \
+    * 4   5
+    * ```
+    */
+  def lefts() : Stream[Boolean] = ((0 to depth()) map (!lab.testBit(_))).toStream
+  /**
+    * Path to node, appended by `true`
+    * 
+    * Ex. `NodeLabel(5).rights = Stream(true, false, true)`
+    * ```
+    *   0
+    *    \
+    *     1
+    *    / \
+    *   2   3
+    *  / \
+    * 4   5
+    * ```
+    */
+  def rights() : Stream[Boolean] = ((0 to depth()) map (lab.testBit(_))).toStream
 
   // Auxiliary stuff
   def invert() : NodeLabel =
@@ -71,6 +104,9 @@ case class NodeLabel(lab : BigInt) extends Serializable {
 object NodeLabelFunctions {
   val rootLabel : NodeLabel = NodeLabel(1)
 
+  /**
+    * Closest common ancestor
+    */
   def join(a : NodeLabel, b : NodeLabel) : NodeLabel = {
     val d = min(a.depth, b.depth)
     val aT = a.truncate(d)
@@ -135,6 +171,26 @@ object NodeLabelFunctions {
   }
 
   type Walk = Stream[NodeLabel]
+
+  // Finds the label for `node` if the ancestor `root` was the root node.
+  def rootAtNode(root: NodeLabel, node: NodeLabel): NodeLabel = 
+    NodeLabel(
+      ( node.lab - 
+        (root.lab << (node.depth - root.depth))
+      ).setBit(node.depth - root.depth)
+    )
+
+  /*
+    Finds the label for `node` if its tree
+    was grafted to `root`.
+    Inversion of rootAtNode.
+  */
+  def descendantFromRoot(root: NodeLabel, node: NodeLabel): NodeLabel =
+    NodeLabel(
+      (root.lab << (node.depth)) + 
+      (node.lab.clearBit(node.depth))
+    )
+
 }
 
 import NodeLabelFunctions._

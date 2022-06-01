@@ -153,6 +153,18 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     assert(j == join(j, b))
   }
 
+  "lefts" should "give the path from the root node" in {
+    val lab = rootLabel.left.left.right.left
+    val expectedLefts = Vector(true, false, true, true, false)
+    assert(lab.lefts.toVector === expectedLefts)
+  }
+
+  "rights" should "give the path from the root node" in {
+    val lab = rootLabel.left.left.right.left
+    val expectedLefts = Vector(false, true, false, false, true)
+    assert(lab.rights.toVector === expectedLefts)
+  }
+
   "initialLefts" should "give number of initial left steps" in {
     val lab1 = rootLabel.left.left.right
     val lab2 = rootLabel.left.left.left.right.left
@@ -800,8 +812,6 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val bads = leaves2.filter(lab1 => !leaves1.exists(lab2 => lab2 == lab1 || isAncestorOf(lab2, lab1))).toSet
     assert(bads.isEmpty)
   }
-
-
   // it should "never backtrack beyond goal" in {
   //   def prio1(lab : NodeLabel, c : Count, v : Volume) : (Count, BigInt) = (c, lab.lab)
   //   def prio(lab : NodeLabel, c : Count, v : Volume) : Count =

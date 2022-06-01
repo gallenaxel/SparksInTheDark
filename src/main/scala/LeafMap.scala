@@ -1,5 +1,5 @@
 /**************************************************************************
- * Copyright 2017 Tilo Wiklund
+ * Copyright 2017 Tilo Wiklund, 2022 Johannes Graner
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import scala.reflect.ClassTag
 import Types._
 
 import NodeLabelFunctions._
+import TruncationFunctions._
 
 case class LeafMap[A:ClassTag](truncation : Truncation, vals : Vector[A]) extends Serializable {
   // TODO: Optimise?
@@ -38,6 +39,13 @@ case class LeafMap[A:ClassTag](truncation : Truncation, vals : Vector[A]) extend
 
   def slice(ss : Subset) : Iterator[A] = vals.slice(ss.lower, ss.upper).toIterator
 
+  /**
+    * merges tree upwards
+    *
+    * @param at node to merge at. All leaves that are descendents are merged
+    * @param op the merging operation (e.g. `_ + _` for counts)
+    * @return (lowest merged index, merged LeafMap)
+    */
   def mergeSubtreeWithIdx(at : NodeLabel, op : (A, A) => A) : (Option[Int], LeafMap[A]) = {
     val ss = truncation.subtree(at)
       if(ss.size == 0) (none(), this)
@@ -60,6 +68,13 @@ case class LeafMap[A:ClassTag](truncation : Truncation, vals : Vector[A]) extend
       }
     }
 
+  /**
+    * merges tree upwards
+    *
+    * @param at node to merge at. All leaves that are descendents are merged
+    * @param op the merging operation (e.g. `_ + _` for counts)
+    * @return (merged parent of `at`, merged LeafMap)
+    */
     def mergeSubtreeCheckCherry(at : NodeLabel, op : (A, A) => A) : (Option[(NodeLabel, A)], LeafMap[A]) = {
       val (idxOpt, t) = mergeSubtreeWithIdx(at, op)
       idxOpt match {
@@ -81,6 +96,13 @@ case class LeafMap[A:ClassTag](truncation : Truncation, vals : Vector[A]) extend
     def cherries(op : (A, A) => A) : Iterator[(NodeLabel, A)] =
       truncation.cherries().map(x => (truncation.leaves(x(0)).parent, x.map(vals(_)).reduce(op)))
 
+  /**
+    * merges tree upwards
+    *
+    * @param at node to merge at. All leaves that are descendents are merged
+    * @param op the merging operation (e.g. `_ + _` for counts)
+    * @return merged LeafMap
+    */
     def mergeSubtree(at : NodeLabel, op : (A, A) => A) : LeafMap[A] =
       mergeSubtreeWithIdx(at, op)._2
 
@@ -90,6 +112,13 @@ case class LeafMap[A:ClassTag](truncation : Truncation, vals : Vector[A]) extend
       toIterable().toMap
 
     // TODO: Figure out if this can be done more efficently
+    /**
+      * internal nodes and their merged values
+      *
+      * @param base neutral element of merging operation s.t. `op(base, a) = a = op(a, base)`
+      * @param op the merging operation
+      * @return
+      */
     def internal(base : A, op : (A, A) => A) : Stream[(NodeLabel, A)] = {
       def go(lab : NodeLabel, bound : Subset) : (A, Stream[(NodeLabel, A)]) = {
         val newBound = truncation.subtreeWithin(lab, bound)
@@ -135,6 +164,58 @@ object LeafMapFunctions {
   def concatLeafMaps[A:ClassTag](f : Vector[LeafMap[A]]) : LeafMap[A] =
     LeafMap( Truncation(f.map(_.truncation.leaves).fold(Vector())(_++_)),
              f.map(_.vals).fold(Vector())(_++_)    )
+
+  def mrpTransform[A, B:ClassTag](leafMap: LeafMap[A], f: A => B): LeafMap[B] = {
+    leafMap.copy(vals = leafMap.vals.map(f))
+  }
+
+  def mrpOperate[A:ClassTag](leafMap1: LeafMap[A], leafMap2: LeafMap[A], op: (A, A) => A, base: A, nested: Boolean = false): LeafMap[A] = {
+
+    val unionLeaves = if (nested) {
+      val (finer, coarser) = if (leafMap1.leaves.length > leafMap2.leaves.length)
+        (leafMap1.truncation, leafMap2.truncation)
+      else
+        (leafMap2.truncation, leafMap1.truncation)
+      
+      rpUnionNested(finer, coarser).leaves
+    } else 
+      rpUnion(leafMap1.truncation, leafMap2.truncation).leaves
+
+    val operatedVals = unionLeaves.foldLeft((Vector.empty[A], leafMap1.leaves zip leafMap1.vals, leafMap2.leaves zip leafMap2.vals)){ case ((acc, l1, l2), newNode) => 
+      val v1OptIndex = l1.indexWhere{ case(node, _) => node == newNode || isAncestorOf(node, newNode) } match {
+        case -1 => None
+        case i  => Some(i)
+      }
+      val v2OptIndex = l2.indexWhere{ case(node, _) => node == newNode || isAncestorOf(node, newNode) } match {
+        case -1 => None
+        case i  => Some(i)
+      }
+
+      val newv = (v1OptIndex, v2OptIndex) match {
+        case (Some(i), None) => op(l1(i)._2, base)
+        case (None, Some(i)) => op(base, l2(i)._2)
+        case (Some(i), Some(k)) => op(l1(i)._2, l2(k)._2)
+        case _ => throw new IllegalArgumentException(s"should not happen \n attempted to operate on ${l1.map(_._1).take(1000)} and \n ${l2.map(_._1).take(1000)} \n with newNode $newNode")
+      }
+
+      def newIter1 = v1OptIndex match {
+        case None => l1
+        case Some(i) => if (l1(i)._1 == newNode) l1.drop(i+1) else l1
+      }
+
+      def newIter2 = v2OptIndex match {
+        case None => l2
+        case Some(i) => if (l2(i)._1 == newNode) l2.drop(i+1) else l2
+      }
+
+      ( acc :+ newv, 
+        if (l1.isEmpty) l1 else newIter1, 
+        if (l2.isEmpty) l2 else newIter2 
+      )
+    }._1
+
+    LeafMap(Truncation(unionLeaves), operatedVals)
+  }
 }
 
 import LeafMapFunctions._

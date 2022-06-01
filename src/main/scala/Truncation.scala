@@ -1,5 +1,5 @@
 /**************************************************************************
- * Copyright 2017 Tilo Wiklund
+ * Copyright 2017 Tilo Wiklund, 2022 Johannes Graner
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,12 @@ import NodeLabelFunctions._
 // Leaf-labelled finite (truncated) binary trees
 
 // TODO: Can we make efficient splices part of Truncation instead?
+/**
+  * a range of indices to be included as the leaves of a subtree.
+  *
+  * @param lower minimum index (inclusive)
+  * @param upper maximum index (exclusive)
+  */
 case class Subset(lower : Int, upper : Int) extends Serializable {
   def size() : Int = upper - lower
   def isEmpty() : Boolean = size() == 0
@@ -173,6 +179,13 @@ case class Truncation(leaves : Vector[NodeLabel]) extends Serializable {
 
   def slice(ss : Subset) : Iterator[NodeLabel] = leaves.slice(ss.lower, ss.upper).toIterator
 
+  /**
+    * nested ranges of indices for leaves which are descendents of the corresponding
+    * node in the walk `labs`
+    *
+    * @param labs
+    * @return
+    */
   def descend(labs : Walk) : Stream[Subset] =
     labs.scanLeft(allNodes()) {
       case (ss, lab) => subtreeWithin(lab, ss)
@@ -238,4 +251,75 @@ object TruncationFunctions {
     Truncation(leaves.toVector.sorted(leftRightOrd))
 
   def rootTruncation() : Truncation = Truncation(Vector(rootLabel))
+
+  private object DropHead extends Enumeration {
+    type DropHead = Value
+    val L1, L2, Both = Value
+  }
+  import DropHead._
+
+  def rpUnionNested(finer: Truncation, coarser: Truncation): Truncation = {
+
+    val ascsAndDescs = coarser.leaves.map( leaf => leaf -> finer.leaves.filter(maybeDesc => isAncestorOf(leaf, maybeDesc)) )
+    val withMissingDescs = ascsAndDescs.flatMap{ case (asc, descs) =>
+      if (descs.isEmpty) 
+        Vector(asc)
+      else
+        Truncation(descs.map(rootAtNode(asc, _)))
+          .minimalCompletion
+          .leaves.map(descendantFromRoot(asc, _))
+    }
+
+    fromLeafSet(withMissingDescs)
+
+  }
+
+  /**
+    * The leaves of the tree resulting from `RPUnion(t1, t2)`
+    */
+  def rpUnion(t1: Truncation, t2: Truncation): Truncation = {
+
+    def getDrop(n1: NodeLabel, n2: NodeLabel): (Vector[NodeLabel], DropHead) = {
+      if (n1 == n2)
+        (Vector(n1), Both)
+      else if (isAncestorOf(n2, n1))
+        ((n1 +: n1.sibling +: n1.ancestors.take(n1.depth - n2.depth - 1).map(_.sibling).toVector).sorted(leftRightOrd), L1)
+      else if (isAncestorOf(n1, n2))
+        ((n2 +: n2.sibling +: n2.ancestors.take(n2.depth - n1.depth - 1).map(_.sibling).toVector).sorted(leftRightOrd), L2)
+      else if (isLeftOf(n1, n2))
+        (Vector(n1), L1)
+      else
+        (Vector(n2), L2)
+    }
+
+    def combineWithoutAncestry(l1: Vector[NodeLabel], l2: Vector[NodeLabel]): Vector[NodeLabel] = 
+      l1.filter(n1 => l2.forall(n2 => n2.truncate(n1.depth) != n1)) ++
+      l2.filter(n2 => l1.forall(n1 => n1.truncate(n2.depth) != n2))
+
+    @scala.annotation.tailrec
+    def unionHelper(
+      acc: Vector[NodeLabel],
+      l1: Vector[NodeLabel], 
+      l2: Vector[NodeLabel]
+    ): Vector[NodeLabel] = {
+      if (l1.isEmpty)
+        combineWithoutAncestry(acc, l2.filter( n => !acc.contains(n) ))
+      else if (l2.isEmpty)
+        combineWithoutAncestry(acc, l1.filter( n => !acc.contains(n) ))
+      else {
+        val n1 = l1.head
+        val n2 = l2.head
+        val (next, drop) = getDrop(n1, n2)
+        unionHelper(
+          combineWithoutAncestry(acc, next.filter( n => !acc.contains(n) )),
+          if (drop != L2) l1.tail else l1,
+          if (drop != L1) l2.tail else l2
+        )
+      }
+    }
+
+    val unionNodes = unionHelper(Vector.empty, t1.leaves, t2.leaves).toStream
+    val res = unionNodes.toVector
+    Truncation(res)
+  }
 }

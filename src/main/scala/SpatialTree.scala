@@ -1,5 +1,5 @@
 /**************************************************************************
- * Copyright 2017 Tilo Wiklund
+ * Copyright 2017 Tilo Wiklund, 2022 Johannes Graner
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,14 @@ abstract class SpatialTree extends Serializable {
   def volumeAt(at : NodeLabel) : Double =
     this.cellAt(at).volume
 
+  def splits: Stream[Int]
+
+  /**
+    * Axis to split along at node
+    *
+    * @param at
+    * @return
+    */
   def axisAt(at : NodeLabel) : Int
 
   def cellAt(at : NodeLabel) : Rectangle
@@ -48,6 +56,12 @@ abstract class SpatialTree extends Serializable {
 
     def descendBoxPrime(point : MLVector) : Stream[(NodeLabel, Rectangle)]
 
+  /**
+    * Sub-boxes that the point belongs to at increasing depths
+    *
+    * @param point
+    * @return
+    */
   def descendBox(point : MLVector) : Stream[NodeLabel] = descendBoxPrime(point).map(_._1)
 }
 
@@ -58,7 +72,7 @@ case class WidestSplitTree(rootCellM : Rectangle) extends SpatialTree {
     rootCellM.volume / pow(2, at.depth)
 
   // NOTE: Emulates unfold, since unfold apparently only exists in Scalaz...
-  val splits : Stream[Int] = Stream.iterate((0, rootCellM.widths)) {
+  override def splits : Stream[Int] = Stream.iterate((0, rootCellM.widths)) {
     case (_, ws) =>
       val i = ws.zipWithIndex.maxBy(_._1)._2
       (i, ws.updated(i, ws(i)/2))
@@ -67,7 +81,7 @@ case class WidestSplitTree(rootCellM : Rectangle) extends SpatialTree {
   //TODO: Optimise
   override def axisAt(at : NodeLabel) : Int = splits(at.depth)
 
-  override def cellAt(at : NodeLabel) : Rectangle = (at.lefts zip splits).foldLeft(rootCell) {
+  override def cellAt(at : NodeLabel) : Rectangle = (at.lefts.reverse.tail zip splits).foldLeft(rootCell) {
     case (cell, (l, i)) =>
       if(l) cell.lower(i) else cell.upper(i)
   }
@@ -95,6 +109,7 @@ case class UniformSplitTree(rootCellM : Rectangle) extends SpatialTree {
   override def volumeAt(at : NodeLabel) : Double =
     rootCellM.volume / pow(2, at.depth)
 
+  override def splits: Stream[Int] = Stream.from(1).map(_ % dimension)
   override def axisAt(at : NodeLabel) : Int =
     at.depth % dimension()
 
