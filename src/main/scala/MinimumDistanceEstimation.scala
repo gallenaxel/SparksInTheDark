@@ -16,6 +16,8 @@
 
 package co.wiklund.disthist
 
+import math.min
+
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.{ SparkSession, Dataset }
 
@@ -40,7 +42,27 @@ object MDEFunctions {
     verbose: Boolean = false, 
     prio: PriorityFunction[Count] = {case (_, c, _) => c }
   ): Vector[Histogram] = {
-    val backtrackedSpaced = hist.backtrack(prio).zipWithIndex.drop(startIndex).filter{ case (_, i) => (i - startIndex) % stepSize == 0}.takeWhile(_._2 <= stopIndex).map(_._1)
+    //val backtrackedSpaced = hist.backtrack(prio).zipWithIndex.drop(startIndex).filter{ case (_, i) => (i - startIndex) % stepSize == 0}.takeWhile(_._2 <= stopIndex).map(_._1)
+
+    var startHist = startIndex match {
+      case 0 => hist
+      case _ => hist.backtrackNumSteps(prio, startIndex)
+    }
+
+    var index = startIndex
+    var numBacktracks = 0
+    /* May not go furter than stopindex, but must also not merge further than root */
+    val lim = min(stopIndex, startHist.counts.vals.length-1)
+    while (index + (numBacktracks + 1) * stepSize <= lim) {
+      numBacktracks += 1
+    }
+
+    var backtrackedSpaced : Array[Histogram] = new Array(numBacktracks + 1)
+    backtrackedSpaced(0) = hist
+    for (i <- 1 until backtrackedSpaced.length) {
+      backtrackedSpaced(i) = backtrackedSpaced(i-1).backtrackNumSteps(prio, stepSize)
+    }
+ 
     if (verbose) {
       val initialSize = hist.counts.leaves.length
       println(s"Backtracking from histogram of size ${initialSize}.")

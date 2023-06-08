@@ -3,6 +3,7 @@ import scala.language.postfixOps
 import org.apache.spark.mllib.linalg.{ Vector => MLVector, _ }
 import scala.math.{abs, pow}
 
+import org.apache.spark.sql.{ Dataset, SparkSession }
 import org.apache.spark.{ SparkContext, SparkConf }
 import org.apache.spark.rdd.RDD
 import org.apache.log4j.{ Logger, Level }
@@ -19,6 +20,7 @@ import co.wiklund.disthist.LeafMapFunctions._
 import co.wiklund.disthist.RectangleFunctions._
 import co.wiklund.disthist.SpatialTreeFunctions._
 import co.wiklund.disthist.SplitEstimatorFunctions._
+import co.wiklund.disthist.MergeEstimatorFunctions._
 import co.wiklund.disthist.BinarySearchFunctions._
 import co.wiklund.disthist.UnfoldTreeFunctions._
 
@@ -48,8 +50,9 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
   override protected def beforeAll() : Unit = {
     Logger.getLogger("org").setLevel(Level.ERROR)
     Logger.getLogger("akka").setLevel(Level.ERROR)
-    val conf = new SparkConf().setAppName("ScalaDensityTest").setMaster("local")
-    sc = new SparkContext(conf)
+    val spark = SparkSession.builder.master("local").getOrCreate
+    spark.conf.set("spark.default.parallelism", "6")
+    sc = spark.sparkContext 
     df = normalVectorRDD(sc, dfnum, dfdim, 6, 7387389).cache()
     dfLocal = df.collect().toVector
     bb = boundingBox(df)
@@ -66,6 +69,8 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     df = null
     bb = null
   }
+
+  private def getSpark: SparkSession = SparkSession.getActiveSession.get
 
   "binarySearch" should "find first true value" in {
     assert(binarySearch((x : Int) => x >= 3)(Vector(0, 1, 2, 3, 3, 4, 5)) === 3)
@@ -472,12 +477,49 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
           case (_, lab2, _) => lab2 === lab1.parent
         }
     }
+
+    val (mergeOrder, hist) = h.backtrackNumStepsVerification(prio, 16*h.counts.vals.length)
+    var i = 0
+
+    bt.tails.foreach {
+      case Stream.Empty => ()
+      case ((_, lab1, h1) #:: rest) => {
+        assert(lab1 == mergeOrder(i)._2)
+        rest.foreach {
+          case (_, lab2, _) => {
+            assert(!isAncestorOf(lab1, lab2))
+          }
+        }
+        // rest.foreach {
+        //   case (lab2, h2) => assert(isAncestorOf(lab2, lab1) || c1 <= c2)
+        // }
+        if (!rest.isEmpty) {
+          assert(rest.exists {
+            case (_, lab2, _) => lab2 === lab1.parent
+          })
+        }
+        if (!mergeOrder.drop(i+1).isEmpty) {
+          assert(mergeOrder.drop(i+1).exists {
+            case (_, lab2) =>  lab2 === lab1.parent
+          })
+        }
+
+        i += 1
+      }
+    }
   }
 
   it should "only traverse ancestors" in {
     // def prio(lab : NodeLabel, c : Count, v : Volume) : Count = c
     def prio(lab : NodeLabel, c : Count, v : Volume) : Double =
       (1 - (1.0*c)/h.totalCount)*v
+    
+    val (mergeOrder, hist) = h.backtrackNumStepsVerification(prio, 16*h.counts.vals.length)
+    mergeOrder.map(t => t._2).foreach(node => {
+      assert(h.counts.truncation.leaves.exists {
+        case leaf => isAncestorOf(node, leaf)
+      })
+    })
 
     h.backtrackNodes(prio).foreach {
       case n =>
@@ -494,6 +536,9 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
       (1 - (1.0*c)/h.totalCount)*v
     val tracked = h.backtrackNodes(prio).toVector.toStream
     assertdistinct(tracked)
+
+    val (mergeOrder, hist) = h.backtrackNumStepsVerification(prio, 16*h.counts.vals.length)
+    assertdistinct(mergeOrder)
   }
 
   it should "begin/end in starting/trivial histogram" in {
@@ -503,6 +548,11 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
 
     assert(h.backtrack(prio).head === h)
     assert(h.backtrack(prio).last.counts.truncation.leaves === Vector(rootLabel))
+
+    val (mergeOrder, hist) = h.backtrackNumStepsVerification(prio, 16*h.counts.vals.length)
+    assert(hist.counts.truncation.leaves == Vector(rootLabel))
+    assert(hist.counts.vals == Vector(h.totalCount))
+    assert(hist.totalCount == h.totalCount)
   }
 
   it should "traverse all ancestors" in {
@@ -516,6 +566,12 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val full = h.counts.truncation.leaves.toSet.flatMap((x : NodeLabel) => x.ancestors())
     assert((tracked -- full).isEmpty)
     assert((full -- tracked).isEmpty)
+
+    val (mergeOrder, hist) = h.backtrackNumStepsVerification(prio, 16*h.counts.vals.length)
+    val traversed = mergeOrder.map(_._2).toSet
+    assert((tracked -- traversed).isEmpty)
+    assert((traversed -- tracked).isEmpty)
+
     // h.counts.truncation.leaves.foreach {
     //   case c =>
     //     c.ancestors.foreach {
@@ -544,12 +600,44 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
         val leaves = hprev.counts.truncation.leaves
         assert(hprev.counts.truncation.leaves.contains(lab))
     }
+
+    val (mergeOrder, hist) = h.backtrackNumStepsVerification(prio, 16*h.counts.vals.length)
+    val hists : Array[Histogram] = new Array(mergeOrder.length + 1)
+    hists(0) = h
+
+    for (i <- 1 to mergeOrder.length) {
+      val (arr, hist) = hists(i-1).backtrackNumStepsVerification(prio, 1)
+      val n = arr(0)
+      val leaves = hists(i-1).counts.truncation.leaves
+      hists(i) = hist
+      assert(!leaves.contains(n._2))
+      assert(hists(i).counts.truncation.leaves.contains(n._2))
+      assert(leaves.contains(n._2.left) || leaves.contains(n._2.right))
+    }
   }
 
   it should "give histograms of decreasing size" in {
     // def prio(lab : NodeLabel, c : Count, v : Volume) : Count = c
     def prio(lab : NodeLabel, c : Count, v : Volume) : Double =
       (1 - (1.0*c)/h.totalCount)*v
+
+    val (mergeOrder, hist) = h.backtrackNumStepsVerification(prio, 16*h.counts.vals.length)
+    val hists : Array[Histogram] = new Array(mergeOrder.length + 1)
+    hists(0) = h
+
+    for (i <- 1 to mergeOrder.length) {
+      val (arr, hist) = hists(i-1).backtrackNumStepsVerification(prio, 1)
+      val leaves = hists(i-1).counts.truncation.leaves
+      hists(i) = hist
+
+      val diff1 = hists(i-1).truncation.leaves.toSet -- hists(i).truncation.leaves.toSet
+      val diff2 = hists(i).truncation.leaves.toSet -- hists(i-1).truncation.leaves.toSet
+
+      assert(diff1.size == 1 || diff1.size == 2)
+      assert(diff2.size == 1)
+      assert(diff1.forall(x => isAncestorOf(diff2.toVector(0), x)))
+    }
+
 
     // def go(xs : Stream[(NodeLabel, Count)]) : Boolean = cs match {
     //   case Stream.Empty => true
@@ -598,6 +686,47 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
         // // Extra sanity check, should be same as above
         // assert(h1.truncation.leaves.size <= h2.truncation.leaves.size + 1)
         // assert(h1.ncells <= h2.ncells + 1)
+    }
+  }
+
+  "backtrackNumSteps" should "produce the same histogram as backtrack" in {
+    implicit val ordering : Ordering[NodeLabel] = leftRightOrd
+    val spark = getSpark
+    import spark.implicits._
+   
+    def prio(lab : NodeLabel, c : Count, v : Volume) : Double =
+      (1 - (1.0*c)/h.totalCount)*v
+
+    val dimensions = 10
+    val sizeExp = 4
+
+    val numPartitions = 4
+    
+    val trainSize = math.pow(10, sizeExp).toLong
+
+    val rawTrainRDD = normalVectorRDD(sc, trainSize, dimensions, numPartitions, 1234567).cache
+
+    var rootBox = RectangleFunctions.boundingBox(rawTrainRDD)
+
+    val tree = widestSideTreeRootedAt(rootBox)
+    val depth = 70
+
+    println("Starting Regression Test on new backtrack routine")
+    val labels = quickToLabeled(tree, depth, rawTrainRDD)
+    val merged = mergeLeaves(tree, labels.toDS(), 20, depth / 8, "../tmp", true).collect.sortBy(_._1)(leftRightOrd)
+    val hist = Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap))
+
+    var corr : Histogram = null
+    val str = hist.backtrack(prio).zipWithIndex.drop(1).filter{ case (_, i) => i % 500 == 0}.takeWhile(_._2 <= 500).map(_._1).take(500)
+    str.foreach(t => corr = t )
+    val bt = hist.backtrackNumSteps(prio, 500)
+
+    assert(bt.totalCount == corr.totalCount)
+    assert(bt.counts.vals.length == bt.counts.truncation.leaves.length)
+    assert(bt.counts.truncation.leaves.length == corr.counts.truncation.leaves.length)
+    for (i <- 0 until bt.counts.vals.length) {
+      assert(bt.counts.vals(i) == corr.counts.vals(i))
+      assert(bt.counts.truncation.leaves(i) == corr.counts.truncation.leaves(i))
     }
   }
 
