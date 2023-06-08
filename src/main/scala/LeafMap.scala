@@ -172,11 +172,26 @@ object LeafMapFunctions {
   def mrpOperate[A:ClassTag](leafMap1: LeafMap[A], leafMap2: LeafMap[A], op: (A, A) => A, base: A, nested: Boolean = false): LeafMap[A] = {
 
     val unionLeaves = if (nested) {
-      val (finer, coarser) = if (leafMap1.leaves.length > leafMap2.leaves.length)
-        (leafMap1.truncation, leafMap2.truncation)
-      else
-        (leafMap2.truncation, leafMap1.truncation)
-      
+      /* Cannot use length as one being more refined, since the coarser may have more 0-element leaves */
+      var (finer, coarser) = (leafMap1.leaves.length > leafMap2.leaves.length) match {
+        case true => (leafMap1.truncation, leafMap2.truncation)
+        case false => (leafMap2.truncation, leafMap1.truncation)
+      }
+
+      /* Verify that finer is actually the finer one by finding first (ancestor,child) between the two histograms  */
+      var i = 0
+      while (i < coarser.leaves.length) {
+        if (isAncestorOf(coarser.leaves(i), finer.leaves(i))) {
+          i = coarser.leaves.length
+        } else if (isAncestorOf(finer.leaves(i), coarser.leaves(i))) {
+          i = coarser.leaves.length
+          val tmp = finer
+          finer = coarser
+          coarser = finer
+        }
+        i += 1
+      }
+     
       rpUnionNested(finer, coarser).leaves
     } else 
       rpUnion(leafMap1.truncation, leafMap2.truncation).leaves

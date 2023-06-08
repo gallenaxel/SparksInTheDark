@@ -44,6 +44,51 @@ class ArithmeticTests extends FlatSpec with Matchers {
     assert(unioned === expected)
   }
 
+  "rpUnionNested" should "generate correct trees" in {
+    val coar1 = Truncation(Vector(NodeLabel(1)))
+    val fine1 = Truncation(Vector(NodeLabel(2), NodeLabel(3)))
+    val union1 = rpUnionNested(fine1, coar1).leaves
+    assert(union1.length == 2)
+    assert(union1(0) == NodeLabel(2))
+    assert(union1(1) == NodeLabel(3))
+
+    val coar2 = Truncation(Vector(NodeLabel(2)))
+    val fine2 = Truncation(Vector(NodeLabel(8)))
+    val union2 = rpUnionNested(fine2, coar2).leaves
+    assert(union2.length == 3)
+    assert(union2(0) == NodeLabel(8))
+    assert(union2(1) == NodeLabel(9))
+    assert(union2(2) == NodeLabel(5))
+
+    val coar3 = Truncation(Vector(NodeLabel(3)))
+    val fine3 = Truncation(Vector(NodeLabel(15)))
+    val union3 = rpUnionNested(fine3, coar3).leaves
+    assert(union3.length == 3)
+    assert(union3(0) == NodeLabel(6))
+    assert(union3(1) == NodeLabel(14))
+    assert(union3(2) == NodeLabel(15))
+
+    val coar5 = Truncation(Vector(NodeLabel(1)))
+    val fine5 = Truncation(Vector(16,18,20,22,24,26,28,30).map(NodeLabel(_)))
+    val union5 = rpUnionNested(fine5, coar5).leaves
+    assert(union5.length == 16)
+    val corr5 = Vector(16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31).map(NodeLabel(_))
+    for (i <- 0 until 16) {
+       assert(union5(i) == corr5(i))
+    }
+  }
+
+  it should "generate the correct union from a coarser tree with more leaves than the finer one" in {
+    val coar4 = Truncation(Vector(NodeLabel(11), NodeLabel(12), NodeLabel(13), NodeLabel(14), NodeLabel(15)))
+    val fine4 = Truncation(Vector(NodeLabel(93), NodeLabel(98), NodeLabel(117), NodeLabel(122)))
+    val union4 = rpUnionNested(fine4, coar4).leaves
+    assert(union4.length == 17)
+    val corr4 = Vector(22,92,93,47,48,98,99,25,13,28,116,117,59,60,122,123,31).map(t => NodeLabel(t))
+    for (i <- 0 until 17) {
+       assert(union4(i) == corr4(i))
+    }
+  }
+
   "mrpTransform" should "be a pointwise transformation" in {
     val trunc = Truncation(Vector(8,9,10,11,3).map(NodeLabel(_)))
     val vals = Vector(1,2,3,4,5)
