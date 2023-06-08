@@ -11,6 +11,7 @@ import java.io.File
 import co.wiklund.disthist._
 import MDEFunctions._
 import MergeEstimatorFunctions._
+import org.apache.spark.mllib.linalg.{ Vector => MLVector }
 import SpatialTreeFunctions._
 import Types._
 
@@ -31,7 +32,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     (1 to dfdim).toVector.map(i => -10.0),
     (1 to dfdim).toVector.map(i => 10.0)
   )
-  private val tree = widestSideTreeRootedAt(rootBox)
+  private val tree : WidestSplitTree = widestSideTreeRootedAt(rootBox)
 
   override protected def beforeAll: Unit = {
     Logger.getLogger("org").setLevel(Level.ERROR)
@@ -78,6 +79,62 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val countedDS = labeledToCountedDS(labeledRDD)
     val totalCount = countedDS.map(_._2).reduce(_+_)
     totalCount shouldEqual dfnum
+  }
+
+  "quickToLabeled" should "give correct labels" in {
+    val spark = getSpark
+    import spark.implicits._
+    val testRDD = spark.sparkContext.parallelize(Vector(
+      Vectors.dense(1.0, 1.0, 1.0),
+      Vectors.dense(-1.0, 1.0, 1.0),
+      Vectors.dense(1.0, -1.0, 1.0),
+      Vectors.dense(-1.0, -1.0, 1.0)
+    ))
+
+    val labeled = quickToLabeled(tree, 2, testRDD)
+    val labels = labeled.collect.map(_._1).toVector.sorted(leftRightOrd)
+    val expectedLabels = Vector(4,5,6,7) map tn
+    labels shouldEqual expectedLabels
+  }
+
+  it should "preserve count" in {
+    val spark = getSpark
+    import spark.implicits._
+    val labeled = quickToLabeled(tree, 4, normalRDD)
+    val totalCount = labeled.collect.map(_._2).reduce(_+_)
+    assert(totalCount == dfnum)
+  }
+
+  it should "generate the same labels and counts as older versions" in {
+    val spark = getSpark
+    import spark.implicits._
+    implicit val ordering : Ordering[NodeLabel] = leftRightOrd
+   
+    val dimensions = 10
+    val sizeExp = 4
+
+    val numPartitions = 4
+    
+    val trainSize = math.pow(10, sizeExp).toLong
+
+    val rawTrainRDD = normalVectorRDD(spark.sparkContext, trainSize, dimensions, numPartitions, 1234567).cache
+
+    var rootBox = RectangleFunctions.boundingBox(rawTrainRDD)
+
+    val tree = widestSideTreeRootedAt(rootBox)
+
+    println("Starting Regression Test on new labeling routine")
+    for (depth <- 1 until 50) {
+      println("Depth: " + depth)
+      var tmp1 = quickToLabeled(tree, depth, rawTrainRDD).collect.sortBy(_._1)(leftRightOrd)
+      val labeledRDD = labelAtDepth(tree, depth, rawTrainRDD)
+      val tmp2 = labeledToCountedDS(labeledRDD).collect.sortBy(_._1)(leftRightOrd)
+      assert(tmp1.length == tmp2.length)
+      for (i <- 0 until tmp1.length) {
+        assert(tmp1(i)._1 == tmp2(i)._1)
+        assert(tmp1(i)._2 == tmp2(i)._2)
+      }
+    }
   }
 
   "mergeLeaves" should "respect count limit" in {

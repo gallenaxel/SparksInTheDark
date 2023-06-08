@@ -58,7 +58,7 @@ case class Rectangle(low : Vector[Double], high : Vector[Double]) extends Serial
     v.toArray.toVector.zip(high.zip(low)).forall { case (c, (h, l)) => h >= c && c >= l }
 
   def isStrictLeftOfCentre(along : Axis, v : MLVector) : Boolean =
-    v(along) <= centre(along)
+    v(along) < centre(along)
 
   def isStrictRightOfCentre(along : Axis, v : MLVector) : Boolean =
     v(along) >  centre(along)

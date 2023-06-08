@@ -20,8 +20,9 @@ import scala.math.{min, max, exp, log, pow, ceil}
 
 import org.apache.spark.rdd._
 import org.apache.spark.rdd.PairRDDFunctions._
+import java.math.BigInteger
 
-import Types.MLVector
+import Types._
 
 import UnfoldTreeFunctions._
 import NodeLabelFunctions._
@@ -97,6 +98,79 @@ case class WidestSplitTree(rootCellM : Rectangle) extends SpatialTree {
           else
             (lab.right, box.upper(along))
     }
+
+  /**
+   * quickDescendBox - Quick splitting of single points down to given depth. Reuses arrays and uses
+   *  bit operations directly on bitstring to avoid unecessary allocations.
+   */
+  def quickDescendBox(bits : Array[Byte], numBits : Depth, low : Array[Double], high : Array[Double], splitOrder : Array[Int],  point : MLVector, numDims : Int, depth : Depth) : NodeLabel = {
+
+    for (i <- 0 until bits.length) {
+      bits(i) = 0
+    }
+
+    rootCell.low.copyToArray(low)
+    rootCell.high.copyToArray(high)
+    
+    var currBit = numBits - (depth + 1)
+    var axis = 0
+    var byte = currBit / 8 
+    var shift = 7 - (currBit % 8)
+
+    bits(byte) = bits(byte).|(1 << shift).toByte
+    for (i <- 0 until depth) {
+      currBit += 1
+      byte = currBit / 8
+      shift = 7 - (currBit % 8)
+      axis = splitOrder(i)
+      val mid = (low(axis) + high(axis)) / 2.0
+      if (point(axis) >= mid) {
+        low(axis) = mid 
+        bits(byte) = bits(byte).|(1 << shift).toByte
+      } else {
+        high(axis) = mid 
+      }
+    }
+
+    NodeLabel(new BigInt(new BigInteger(bits)))
+  }
+
+  /**
+   * quickDescend - Quick splitting of points down to given depth
+   */
+  def quickDescend(points : Iterator[MLVector], depth : Depth) : Iterator[NodeLabel] = {
+
+    require(depth > 0)
+
+    /* allocation of reusable bit array representing labels with correct size from the start
+     * 1 bit for sign, depth + 1 bits for representing depth
+     */
+    var numBits = depth + 2
+    val rest = numBits % 8 
+    if (rest > 0) { 
+      numBits = numBits + (8 - rest)
+    } 
+    var bits : Array[Byte] = new Array(numBits / 8)
+    val splitOrder : Array[Depth] = new Array(depth)
+    val low  : Array[Double] = new Array(rootCell.dimension)
+    val high  : Array[Double] = new Array(rootCell.dimension)
+    var widths = rootCell.widths.toArray
+    
+    for (i <- 0 until depth) {
+      var maxIndex = 0
+      var maxVal = widths(maxIndex)
+      for (j <- 1 until rootCell.dimension) {
+        if (maxVal < widths(j)) {
+          maxIndex = j
+          maxVal = widths(j)
+        }
+      }
+      splitOrder(i) = maxIndex 
+      widths(maxIndex) = maxVal / 2
+    }
+
+    points.map(point => quickDescendBox(bits, numBits, low, high, splitOrder, point, rootCell.dimension, depth))
+  }
 }
 
   // TODO: Can we figure out some clever way to do memoisation/caching?
@@ -134,7 +208,7 @@ case class UniformSplitTree(rootCellM : Rectangle) extends SpatialTree {
 object SpatialTreeFunctions {
   // def spatialTreeRootedAt(rootCell : Rectangle) : SpatialTree = SpatialTree(rootCell)
   def uniformTreeRootedAt(rootCell : Rectangle) : SpatialTree = UniformSplitTree(rootCell)
-  def widestSideTreeRootedAt(rootCell : Rectangle) : SpatialTree = WidestSplitTree(rootCell)
+  def widestSideTreeRootedAt(rootCell : Rectangle) : WidestSplitTree = WidestSplitTree(rootCell)
 
   type PartitioningStrategy = RDD[MLVector] => SpatialTree
 

@@ -56,6 +56,14 @@ object MergeEstimatorFunctions {
     labeledDS.groupByKey(_._1).count
   }
 
+  def quickToLabeled(tree: WidestSplitTree, depth: Int, points: RDD[MLVector]): RDD[(NodeLabel, Count)] = {
+    val spark = getSpark
+    import spark.implicits._
+
+    require(depth > 0)
+    points.mapPartitions(iter => tree.quickDescend(iter, depth)).map(n => (n,1L)).reduceByKey((v1, v2) => v1 + v2)
+  }
+
   def getTree[A](tree: SpatialTree)(f: SpatialTree => A) = f(tree)
 
   def mergeLeavesStep(
