@@ -19,12 +19,15 @@ package co.wiklund.disthist
 import math.min
 
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.sql.{ SparkSession, Dataset }
+import org.apache.spark.sql.{ SparkSession }
+import org.apache.spark.rdd.RDD
 
 import Types._
 import HistogramUtilityFunctions._
 import HistogramFunctions._
 import LeafMapFunctions._
+import SubtreePartitionerFunctions._
+import NodeLabelFunctions._
 
 object MDEFunctions {
 
@@ -142,7 +145,7 @@ object MDEFunctions {
 
   def mdeStep(
     hist: Histogram, 
-    validationDS: Dataset[(NodeLabel, Count)], 
+    validationData: RDD[(NodeLabel, Count)], 
     k: Int, 
     stopSize: Option[Int] = None, 
     verbose: Boolean = false
@@ -162,16 +165,21 @@ object MDEFunctions {
     val maxCrpDepth = crp.densities.leaves.map(_.depth).max
     val crpLeafSet = crp.densities.leaves.toSet
     val crpLeafMap = crp.densities.copy(vals = Stream.continually(0).take(crp.densities.leaves.length).toVector)
-    val truncatedValData = validationDS.groupByKey{ case (node, _) => node.truncate(maxCrpDepth) }.mapGroups{ case (anc, nodesAndCounts) => (anc, nodesAndCounts.map{ case (_, count) => count}.sum) }
+
+    //val truncatedValData = validationDS.groupByKey{ case (node, _) => node.truncate(maxCrpDepth) }.mapGroups{ case (anc, nodesAndCounts) => (anc, nodesAndCounts.map{ case (_, count) => count}.sum) }
+    
+    /* TODO: [Performance] Only needs to be done once at the start, we never go deeper than the initial iteration  */
+    val truncatedValData = validationData.map(t => (t._1.truncate(maxCrpDepth), t._2)).reduceByKey{(v1,v2) => v1 + v2}
+
+    /*TODO: [Performance] Can see big improvements here by using SubtreePartitoning on Validation Data??? */
     val valHist = Histogram(
       hist.tree,
       truncatedValData.map(_._2).reduce(_+_),
       fromNodeLabelMap(
         { leafMap: LeafMap[_] =>
-          truncatedValData.groupByKey(node => leafMap.query((node._1 #:: node._1.ancestors).reverse)._1)
-            .mapGroups{ case (node, nodesAndCounts) => (node, nodesAndCounts.map(_._2).sum) }
+            truncatedValData.map(t => { (findSubtree(t._1, leafMap.truncation.leaves), t._2) }).reduceByKey((v1, v2) => v1 + v2)
         }.apply(crpLeafMap)
-        .collect.toMap
+          .collect.toMap
       )
     )
     
@@ -190,7 +198,7 @@ object MDEFunctions {
 
   def getMDE(
     hist: Histogram, 
-    validationData: Dataset[(NodeLabel, Count)], 
+    validationData: RDD[(NodeLabel, Count)], 
     k: Int, 
     verbose: Boolean = false
   ): Histogram = {
