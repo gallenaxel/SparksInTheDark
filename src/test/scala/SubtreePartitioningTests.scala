@@ -69,7 +69,6 @@ class SubtreePartitioningTests extends FlatSpec with Matchers with BeforeAndAfte
     assert(lrOrd.compare(R, LR)  ==   1)
   }
 
-
   "RangeParitioning" should "locally sort each partition according to leftRightOrdering" in {
      val spark = getSpark
      import spark.implicits._
@@ -637,7 +636,7 @@ class SubtreePartitioningTests extends FlatSpec with Matchers with BeforeAndAfte
 }
 
 
-class OggahTests extends FlatSpec with Matchers with BeforeAndAfterAll {
+class FullRunTests extends FlatSpec with Matchers with BeforeAndAfterAll {
 
   override protected def beforeAll: Unit = {
     Logger.getLogger("org").setLevel(Level.ERROR)
@@ -655,7 +654,7 @@ class OggahTests extends FlatSpec with Matchers with BeforeAndAfterAll {
   
   val lrOrd : Ordering[NodeLabel] = leftRightOrd
 
-  "AWDAWD" should "awdahwda whd wha" in {
+  "Full run of program" should "run without exploding" in {
     val spark = getSpark
     import spark.implicits._
     implicit val ordering : Ordering[NodeLabel] = leftRightOrd
