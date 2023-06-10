@@ -182,7 +182,23 @@ object MDEFunctions {
           .collect.toMap
       )
     )
-    
+
+   /* Old Dataset version (Creates non-correct histograms for some reason) */ 
+   /*
+    val valHist = Histogram(
+      hist.tree,
+      truncatedValData.map(_._2).reduce(_+_),
+      fromNodeLabelMap(
+        { leafMap: LeafMap[_] =>
+          truncatedValData.toDS
+            .groupByKey(node => leafMap.query((node._1 #:: node._1.ancestors).reverse)._1)
+            .mapGroups{ case (node, nodesAndCounts) => (node, nodesAndCounts.map(_._2).sum) }
+        }.apply(crpLeafMap)
+        .collect.toMap
+      )
+    )
+    */
+
     if (verbose) println("--- Computing histogram deviations from validation ---")
     val validationDeviations = getDelta(crp, valHist, verbose)
     

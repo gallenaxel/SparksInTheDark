@@ -10,6 +10,9 @@ import java.io.File
 
 import co.wiklund.disthist._
 import MDEFunctions._
+import LeafMapFunctions._
+import NodeLabelFunctions._
+import SubtreePartitionerFunctions._
 import MergeEstimatorFunctions._
 import org.apache.spark.mllib.linalg.{ Vector => MLVector }
 import SpatialTreeFunctions._
@@ -157,5 +160,89 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val mdeHist = getMDE(mergedHist, valDS.rdd, 5, true)
 
     mdeHist.counts.vals.sum shouldEqual dfnum
+  }
+
+  it should "produce a correct histogram for the validation data in the rdd version" in {
+    val spark = getSpark
+    import spark.implicits._
+    implicit val ordering : Ordering[NodeLabel] = leftRightOrd
+   
+    val dimensions = 5
+    val sizeExp = 5
+
+    val numPartitions = 16
+    
+    val trainSize = math.pow(10, sizeExp).toLong
+    val finestResSideLength = 1e-5 
+
+    val rawTrainRDD = normalVectorRDD(spark.sparkContext, trainSize, dimensions, numPartitions, 1234567)
+    val rawTestRDD =  normalVectorRDD(spark.sparkContext, trainSize/2, dimensions, numPartitions, 7654321)
+
+    var rectTrain = RectangleFunctions.boundingBox(rawTrainRDD)
+    var rectTest = RectangleFunctions.boundingBox(rawTestRDD)
+    val rootBox = RectangleFunctions.hull(rectTrain, rectTest)
+
+    val tree = widestSideTreeRootedAt(rootBox)
+    val finestResDepth = tree.descendBoxPrime(Vectors.dense(rootBox.low.toArray)).dropWhile(_._2.widths.max > finestResSideLength).head._1.depth
+    val stepSize = 1500 
+    val kInMDE = 10
+    println(finestResDepth)
+
+    var countedTrain = quickToLabeled(tree, finestResDepth, rawTrainRDD)
+    var countedTest = quickToLabeled(tree, finestResDepth, rawTestRDD)
+        
+    val partitioner = new SubtreePartitioner(2, countedTrain, 20) /* action 1 (collect) */
+    val depthLimit = partitioner.maxSubtreeDepth
+    val countLimit = 5 
+    val subtreeRDD = countedTrain.repartitionAndSortWithinPartitions(partitioner)
+    val merged = mergeLeavesRDD(subtreeRDD, countLimit, depthLimit, true)
+    println("merging done")
+
+    val hist = Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap))
+    var stopSize = Option.empty[Int]
+    
+
+    val stopIndex = 15000 
+    val verbose = true
+    if (verbose) println("--- Backtracking histogram ---")
+    val backtrackedHist = spacedBacktrack(hist, 0, stopIndex, stepSize, verbose).reverse
+    
+    if (verbose) println("--- Merging CRPs ---")
+    val crp = spacedHistToCRP(backtrackedHist, verbose)
+    
+    if (verbose) println("--- Computing validation data histogram ---")
+    val maxCrpDepth = crp.densities.leaves.map(_.depth).max
+    val crpLeafSet = crp.densities.leaves.toSet
+    val crpLeafMap = crp.densities.copy(vals = Stream.continually(0).take(crp.densities.leaves.length).toVector)
+
+    //val truncatedValData = validationDS.groupByKey{ case (node, _) => node.truncate(maxCrpDepth) }.mapGroups{ case (anc, nodesAndCounts) => (anc, nodesAndCounts.map{ case (_, count) => count}.sum) }
+    
+    /* TODO: [Performance] Only needs to be done once at the start, we never go deeper than the initial iteration  */
+    val truncatedValData = countedTest.map(t => (t._1.truncate(maxCrpDepth), t._2)).reduceByKey{(v1,v2) => v1 + v2}
+
+    /*TODO: [Performance] Can see big improvements here by using SubtreePartitoning on Validation Data??? */
+    val valHist = Histogram(
+      hist.tree,
+      truncatedValData.map(_._2).reduce(_+_),
+      fromNodeLabelMap(
+        { leafMap: LeafMap[_] =>
+            truncatedValData.map(t => { (findSubtree(t._1, leafMap.truncation.leaves), t._2) }).reduceByKey((v1, v2) => v1 + v2)
+        }.apply(crpLeafMap)
+          .collect.toMap
+      )
+    )
+
+    val leaves = valHist.counts.truncation.leaves
+    val counts = valHist.counts.vals
+    assert(leaves.length == counts.length)
+    assert(valHist.totalCount == (trainSize/2))
+    for (i <- 0 until counts.length) {
+      assert(counts(i) > 0)
+      for (j <- (i+1) until counts.length) {
+        assert(leftRightOrd.compare(leaves(i),leaves(j)) == -1)
+        assert(!isAncestorOf(leaves(i), leaves(j)))
+        assert(!isAncestorOf(leaves(j), leaves(i)))
+      }
+    }
   }
 }
