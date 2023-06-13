@@ -27,7 +27,7 @@ case class LeafMap[A:ClassTag](truncation : Truncation, vals : Vector[A]) extend
   // TODO: Optimise?
   def query(labs : Walk) : (NodeLabel, Option[A]) = {
     val (at, ss) = truncation.descendUntilLeafWhere(labs)
-    if(ss.isEmpty) (at, none()) else (at, some(vals(ss.lower)))
+    if(ss.isEmpty) (at, None) else (at, Some(vals(ss.lower)))
   }
 
   def toIterable() : Iterable[(NodeLabel, A)] = truncation.leaves.zip(vals)

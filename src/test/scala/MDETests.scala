@@ -5,6 +5,9 @@ import org.apache.spark.mllib.random.RandomRDDs.normalVectorRDD
 
 import org.apache.log4j.{ Logger, Level }
 
+import scala.math.BigInt
+import java.math.BigInteger
+
 import scala.reflect.io.Directory
 import java.io.File
 
@@ -173,7 +176,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val numPartitions = 16
     
     val trainSize = math.pow(10, sizeExp).toLong
-    val finestResSideLength = 1e-5 
+    val finestResSideLength = 1e-1
 
     val rawTrainRDD = normalVectorRDD(spark.sparkContext, trainSize, dimensions, numPartitions, 1234567)
     val rawTestRDD =  normalVectorRDD(spark.sparkContext, trainSize/2, dimensions, numPartitions, 7654321)
@@ -201,7 +204,6 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val hist = Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap))
     var stopSize = Option.empty[Int]
     
-
     val stopIndex = 15000 
     val verbose = true
     if (verbose) println("--- Backtracking histogram ---")
@@ -244,5 +246,58 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
         assert(!isAncestorOf(leaves(j), leaves(i)))
       }
     }
+  }
+
+  "Histogram.density" should "produce 0 values at 0-probability regions" in {
+    val spark = getSpark
+    import spark.implicits._
+    implicit val ordering : Ordering[NodeLabel] = leftRightOrd
+   
+    val dimensions = 100
+    val sizeExp = 6
+
+    val numPartitions = 16
+    
+    val trainSize = math.pow(10, sizeExp).toLong
+    val finestResSideLength = 1 
+
+    val rawTrainRDD = normalVectorRDD(spark.sparkContext, trainSize, dimensions, numPartitions, 1234567)
+    val rawTestRDD =  normalVectorRDD(spark.sparkContext, trainSize/2, dimensions, numPartitions, 7654321)
+
+    var rectTrain = RectangleFunctions.boundingBox(rawTrainRDD)
+    var rectTest = RectangleFunctions.boundingBox(rawTestRDD)
+    val rootBox = RectangleFunctions.hull(rectTrain, rectTest)
+
+    val tree = widestSideTreeRootedAt(rootBox)
+    val finestResDepth = tree.descendBoxPrime(Vectors.dense(rootBox.low.toArray)).dropWhile(_._2.widths.max > finestResSideLength).head._1.depth
+    val stepSize = 1500 
+    val kInMDE = 10
+    println(finestResDepth)
+
+    var countedTrain = quickToLabeled(tree, finestResDepth, rawTrainRDD)
+    var countedTest = quickToLabeled(tree, finestResDepth, rawTestRDD)
+        
+    val partitioner = new SubtreePartitioner(2, countedTrain, 20) /* action 1 (collect) */
+    val depthLimit = partitioner.maxSubtreeDepth
+    val countLimit = 1 
+    val subtreeRDD = countedTrain.repartitionAndSortWithinPartitions(partitioner)
+    val merged = mergeLeavesRDD(subtreeRDD, countLimit, depthLimit, true)
+    println("merging done")
+
+    val hist = Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap))
+
+    val outsidePoint1 = normalVectorRDD(spark.sparkContext, 1, dimensions, numPartitions, 103032)
+      .map(x => Vectors.dense(x.toArray.map(x => x + 100.0))).collect
+    assert(hist.density(outsidePoint1(0)) == 0.0)
+    
+    val last = subtreeRDD.collect.last._1.lab
+    var leftTurn = false
+    for (i <- 0 until 700) {
+      leftTurn = leftTurn || !last.testBit(i)
+    }
+    assert(leftTurn)
+
+    var outsidePoint2 = tree.rootCell.high.toArray
+    assert(hist.density(Vectors.dense(outsidePoint2)) == 0.0)
   }
 }

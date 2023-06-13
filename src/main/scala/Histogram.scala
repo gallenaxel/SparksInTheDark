@@ -60,6 +60,13 @@ case class TailProbabilities(tree : SpatialTree, tails : LeafMap[Probability]) e
 
 case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Count]) extends Serializable {
   def density(v : MLVector) : Double = {
+    val point = v.toArray
+    for (i <- 0 until point.length) {
+      if (point(i) < tree.rootCell.low(i) || point(i) > tree.rootCell.high(i)) {
+        return 0.0
+      }
+    }
+
     counts.query(tree.descendBox(v)) match {
       case (_, None) => 0
       case (at, Some(c)) =>

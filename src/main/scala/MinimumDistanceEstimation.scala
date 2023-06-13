@@ -113,6 +113,7 @@ object MDEFunctions {
     
     if (verbose) println("Broadcasting CRP with validation")
     
+    /* TODO: Can skip string identifiers? let index represent identity instead. */
     // broadcast variable used in delta calculations.
     // Converted to arrays to avoid serialization issues (although the maps should be serializable...)
     type BCType = Broadcast[Array[(BigInt, Array[(String, Double)])]]

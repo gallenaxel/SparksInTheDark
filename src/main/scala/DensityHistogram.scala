@@ -26,8 +26,16 @@ import HistogramFunctions._
 import org.apache.spark.mllib.linalg.Vectors
 
 case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability, Volume)]) {
-  def density(v: MLVector): Probability = 
+  def density(v: MLVector): Probability = {
+    val point = v.toArray
+    for (i <- 0 until point.length) {
+      if (point(i) < tree.rootCell.low(i) || point(i) > tree.rootCell.high(i)) {
+        return 0.0
+      }
+    }
+
     densityMap.query(tree.descendBox(v))._2.getOrElse((0.0, 0.0))._1
+  }
 
   def normalize: DensityHistogram = {
     val integral = densityMap.vals.map{ case (dens, vol) => 
