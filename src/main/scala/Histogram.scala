@@ -18,6 +18,7 @@ package co.wiklund.disthist
 
 import Types.{Count, Volume, Probability, MLVector}
 import scala.collection.mutable.PriorityQueue
+import scala.collection.mutable.HashMap
 import scala.math.{min, max, exp, log, pow, ceil}
 
 import NodeLabelFunctions._
@@ -59,6 +60,13 @@ case class TailProbabilities(tree : SpatialTree, tails : LeafMap[Probability]) e
 
 case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Count]) extends Serializable {
   def density(v : MLVector) : Double = {
+    val point = v.toArray
+    for (i <- 0 until point.length) {
+      if (point(i) < tree.rootCell.low(i) || point(i) > tree.rootCell.high(i)) {
+        return 0.0
+      }
+    }
+
     counts.query(tree.descendBox(v)) match {
       case (_, None) => 0
       case (at, Some(c)) =>
@@ -96,6 +104,211 @@ case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Co
 
   def logPenalisedLik(taurec : Double) : Double =
     log(exp(taurec) - 1) - counts.toIterable.size*taurec + logLik()
+
+  /**
+   * backtrackNumSteps - Manual constrution of coarser histogram according to splitting rule, no streams, no extra allocations, no intermediate histogarm storage.
+   * @param prio - Priority function used in splitting
+   * @param numSteps - Number of splits to backtrack
+   */
+  def backtrackNumSteps[H](prio : PriorityFunction[H], numSteps : Int)(implicit ord : Ordering[H]) : Histogram = {
+    require(numSteps > 0)
+ 
+    /* Create cherry merge priority queue */
+    val cherryLeavesTMP = counts.truncation.cherries().toArray
+    val start = cherryLeavesTMP
+      .map(x => (counts.truncation.leaves(x(0)).parent, x.map(counts.vals(_)).reduce(_+_)))
+      .map {
+        case (lab, c) => (prio(lab, c, tree.volumeAt(lab)), (lab, c))
+      }.toSeq
+    val cherryQueue = priorityQueueFrom(start)(ord.reverse.on(_._1)) // PriorityQueue(start: _*)(ord.reverse.on(_._1))
+    val cherryLeaves = cherryLeavesTMP.flatten.map(x => (counts.truncation.leaves(x), counts.vals(x))).filter(t => t._2 != 0).map(_._1).sorted(leftRightOrd)
+  
+    /* Create map to leaves without cherry parent */
+    var nonCherryLeaves : Array[(NodeLabel, Count)] = new Array(counts.truncation.leaves.length - cherryLeaves.length)
+    val leaves = counts.truncation.leaves.zipWithIndex.sortBy(t => t._1)(leftRightOrd)
+    var i = 0
+    var l = 0
+    for (j <- 0 to cherryLeaves.length) {
+      if (j < cherryLeaves.length) {
+        while (leaves(l)._1 != cherryLeaves(j)) {
+          nonCherryLeaves(i) = (leaves(l)._1, counts.vals(leaves(l)._2))
+          i += 1
+          l += 1
+        }
+        l += 1
+      } else {
+        for (r <- l until leaves.length) {
+          nonCherryLeaves(i) = (leaves(r)._1, counts.vals(leaves(r)._2))
+          i += 1
+        }
+      }
+    }
+    var nonCherryLeafMap : HashMap [NodeLabel, (NodeLabel, Count)] = HashMap.empty
+    nonCherryLeaves.foreach(x => {
+      nonCherryLeafMap += x._1.sibling -> x
+    })
+  
+    /* Remove cherry from queue (merge). If its siblign exist in the leafmap, add new cherry to queue, otherwise
+     * map the cherry's sibing to the cherry
+     */
+    for (step <- 1 to numSteps) {
+      val cherry = cherryQueue.dequeue._2
+      if (cherry._1 == NodeLabelFunctions.rootLabel) {
+        return Histogram(tree, totalCount, LeafMap(Truncation(Vector(rootLabel)), Vector(totalCount)))
+      }
+      nonCherryLeafMap.remove(cherry._1) match {
+        case Some(leaf) => {
+          val newCherry = (cherry._1.parent, leaf._2 + cherry._2)
+          cherryQueue.enqueue((prio(newCherry._1, newCherry._2, tree.volumeAt(newCherry._1)), newCherry))
+        }
+        case None => {
+          /* Check subtree of sibling, if it is empty, add cherry's parent to queue */
+          val ss = counts.truncation.subtree(cherry._1.sibling)
+          if (ss.isEmpty) {
+            val newCherry = (cherry._1.parent, cherry._2)
+            cherryQueue.enqueue((prio(newCherry._1, newCherry._2, tree.volumeAt(newCherry._1)), newCherry))
+          } else {
+            nonCherryLeafMap += cherry._1.sibling -> cherry
+          }
+        }
+      }
+    }
+  
+    /* Create new histogram from cherryleaves + leaf values in map */
+    val maxLen = 2 * cherryQueue.length + nonCherryLeafMap.size
+    var newLeaves : Array[NodeLabel] = new Array(maxLen)
+    var newVals : Array[Count] = new Array(maxLen)
+    i = 0
+    cherryQueue.foreach(t => {
+      val cherry = t._2._1
+      val vec = Vector(cherry.left, cherry.right)
+      vec.foreach(l => {
+        val ss = counts.truncation.subtree(l)
+        if (!ss.isEmpty) {
+          newLeaves(i) = l
+          newVals(i) = counts.slice(ss).reduce(_+_)
+          i += 1
+        }
+      })
+    })
+    nonCherryLeafMap.values.foreach(l => {
+      newLeaves(i) = l._1
+      newVals(i) = l._2
+      i += 1
+    })
+
+    val finalLeaves = newLeaves.dropRight(maxLen-i).toVector.zipWithIndex.sortBy(t => t._1)(leftRightOrd)
+    var finalVals : Array[Count] = new Array(i)
+    for (i <- 0 until i) {
+      finalVals(i) = newVals(finalLeaves(i)._2)
+    }
+  
+    Histogram(tree, totalCount, LeafMap(Truncation(finalLeaves.map(t => t._1)), finalVals.toVector))
+  }
+
+  /* 
+   * Exactly the same as above, but need to save merging order for verification in testing
+   */
+  def backtrackNumStepsVerification[H](prio : PriorityFunction[H], numSteps : Int)(implicit ord : Ordering[H]) : (Array[(H, NodeLabel)], Histogram) = {
+      require(numSteps > 0)
+      var arr : Array[(H, NodeLabel)] = new Array(numSteps)
+    
+      /* Create cherry merge priority queue */
+      val cherryLeavesTMP = counts.truncation.cherries().toArray
+      val start = cherryLeavesTMP
+        .map(x => (counts.truncation.leaves(x(0)).parent, x.map(counts.vals(_)).reduce(_+_)))
+        .map {
+          case (lab, c) => (prio(lab, c, tree.volumeAt(lab)), (lab, c))
+        }.toSeq
+      val cherryQueue = priorityQueueFrom(start)(ord.reverse.on(_._1)) // PriorityQueue(start: _*)(ord.reverse.on(_._1))
+      val cherryLeaves = cherryLeavesTMP.flatten.map(x => (counts.truncation.leaves(x), counts.vals(x))).filter(t => t._2 != 0).map(_._1).sorted(leftRightOrd)
+    
+      /* Create map to leaves without cherry parent */
+      var nonCherryLeaves : Array[(NodeLabel, Count)] = new Array(counts.truncation.leaves.length - cherryLeaves.length)
+      val leaves = counts.truncation.leaves.zipWithIndex.sortBy(t => t._1)(leftRightOrd)
+      var i = 0
+      var l = 0
+      for (j <- 0 to cherryLeaves.length) {
+        if (j < cherryLeaves.length) {
+          while (leaves(l)._1 != cherryLeaves(j)) {
+            nonCherryLeaves(i) = (leaves(l)._1, counts.vals(leaves(l)._2))
+            i += 1
+            l += 1
+          }
+          l += 1
+        } else {
+          for (r <- l until leaves.length) {
+            nonCherryLeaves(i) = (leaves(r)._1, counts.vals(leaves(r)._2))
+            i += 1
+          }
+        }
+      }
+      var nonCherryLeafMap : HashMap [NodeLabel, (NodeLabel, Count)] = HashMap.empty
+      nonCherryLeaves.foreach(x => {
+        nonCherryLeafMap += x._1.sibling -> x
+      })
+    
+      /* Remove cherry from queue (merge). If its siblign exist in the leafmap, add new cherry to queue, otherwise
+       * map the cherry's sibing to the cherry
+       */
+      for (step <- 1 to numSteps) {
+        val tmp = cherryQueue.dequeue
+        arr(step - 1) = (tmp._1, tmp._2._1)
+        val cherry = tmp._2 
+        if (cherry._1 == NodeLabelFunctions.rootLabel) {
+          return (arr.dropRight(numSteps - step), Histogram(tree, totalCount, LeafMap(Truncation(Vector(rootLabel)), Vector(totalCount))))
+        }
+        nonCherryLeafMap.remove(cherry._1) match {
+          case Some(leaf) => {
+            val newCherry = (cherry._1.parent, leaf._2 + cherry._2)
+            cherryQueue.enqueue((prio(newCherry._1, newCherry._2, tree.volumeAt(newCherry._1)), newCherry))
+          }
+          case None => {
+            /* Check subtree of sibling, if it is empty, add cherry's parent to queue */
+            val ss = counts.truncation.subtree(cherry._1.sibling)
+            if (ss.isEmpty) {
+              val newCherry = (cherry._1.parent, cherry._2)
+              cherryQueue.enqueue((prio(newCherry._1, newCherry._2, tree.volumeAt(newCherry._1)), newCherry))
+            } else {
+              nonCherryLeafMap += cherry._1.sibling -> cherry
+            }
+          }
+        }
+      }
+    
+      /* Create new histogram from cherryleaves + leaf values in map */
+      val maxLen = 2 * cherryQueue.length + nonCherryLeafMap.size
+      var newLeaves : Array[NodeLabel] = new Array(maxLen)
+      var newVals : Array[Count] = new Array(maxLen)
+      i = 0
+      cherryQueue.foreach(t => {
+        val cherry = t._2._1
+        val vec = Vector(cherry.left, cherry.right)
+        vec.foreach(l => {
+          val ss = counts.truncation.subtree(l)
+          if (!ss.isEmpty) {
+            newLeaves(i) = l
+            newVals(i) = counts.slice(ss).reduce(_+_)
+            i += 1
+          }
+        })
+      })
+      nonCherryLeafMap.values.foreach(l => {
+        newLeaves(i) = l._1
+        newVals(i) = l._2
+        i += 1
+      })
+  
+      val finalLeaves = newLeaves.dropRight(maxLen-i).toVector.zipWithIndex.sortBy(t => t._1)(leftRightOrd)
+      var finalVals : Array[Count] = new Array(i)
+      for (i <- 0 until i) {
+        finalVals(i) = newVals(finalLeaves(i)._2)
+      }
+    
+      (arr, Histogram(tree, totalCount, LeafMap(Truncation(finalLeaves.map(t => t._1)), finalVals.toVector)))
+    }
+
+
 
   def backtrackWithNodes[H](prio : PriorityFunction[H])(implicit ord : Ordering[H]) : (Stream[(H, NodeLabel)], Stream[Histogram]) = {
     val start = counts.cherries(_+_).map {

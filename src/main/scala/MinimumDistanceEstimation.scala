@@ -16,13 +16,18 @@
 
 package co.wiklund.disthist
 
+import math.min
+
 import org.apache.spark.broadcast.Broadcast
-import org.apache.spark.sql.{ SparkSession, Dataset }
+import org.apache.spark.sql.{ SparkSession }
+import org.apache.spark.rdd.RDD
 
 import Types._
 import HistogramUtilityFunctions._
 import HistogramFunctions._
 import LeafMapFunctions._
+import SubtreePartitionerFunctions._
+import NodeLabelFunctions._
 
 object MDEFunctions {
 
@@ -40,7 +45,27 @@ object MDEFunctions {
     verbose: Boolean = false, 
     prio: PriorityFunction[Count] = {case (_, c, _) => c }
   ): Vector[Histogram] = {
-    val backtrackedSpaced = hist.backtrack(prio).zipWithIndex.drop(startIndex).filter{ case (_, i) => (i - startIndex) % stepSize == 0}.takeWhile(_._2 <= stopIndex).map(_._1)
+    //val backtrackedSpaced = hist.backtrack(prio).zipWithIndex.drop(startIndex).filter{ case (_, i) => (i - startIndex) % stepSize == 0}.takeWhile(_._2 <= stopIndex).map(_._1)
+
+    var startHist = startIndex match {
+      case 0 => hist
+      case _ => hist.backtrackNumSteps(prio, startIndex)
+    }
+
+    var index = startIndex
+    var numBacktracks = 0
+    /* May not go furter than stopindex, but must also not merge further than root */
+    val lim = min(stopIndex, startHist.counts.vals.length-1)
+    while (index + (numBacktracks + 1) * stepSize <= lim) {
+      numBacktracks += 1
+    }
+
+    var backtrackedSpaced : Array[Histogram] = new Array(numBacktracks + 1)
+    backtrackedSpaced(0) = hist
+    for (i <- 1 until backtrackedSpaced.length) {
+      backtrackedSpaced(i) = backtrackedSpaced(i-1).backtrackNumSteps(prio, stepSize)
+    }
+ 
     if (verbose) {
       val initialSize = hist.counts.leaves.length
       println(s"Backtracking from histogram of size ${initialSize}.")
@@ -88,6 +113,7 @@ object MDEFunctions {
     
     if (verbose) println("Broadcasting CRP with validation")
     
+    /* TODO: Can skip string identifiers? let index represent identity instead. */
     // broadcast variable used in delta calculations.
     // Converted to arrays to avoid serialization issues (although the maps should be serializable...)
     type BCType = Broadcast[Array[(BigInt, Array[(String, Double)])]]
@@ -120,7 +146,7 @@ object MDEFunctions {
 
   def mdeStep(
     hist: Histogram, 
-    validationDS: Dataset[(NodeLabel, Count)], 
+    validationData: RDD[(NodeLabel, Count)], 
     k: Int, 
     stopSize: Option[Int] = None, 
     verbose: Boolean = false
@@ -140,19 +166,40 @@ object MDEFunctions {
     val maxCrpDepth = crp.densities.leaves.map(_.depth).max
     val crpLeafSet = crp.densities.leaves.toSet
     val crpLeafMap = crp.densities.copy(vals = Stream.continually(0).take(crp.densities.leaves.length).toVector)
-    val truncatedValData = validationDS.groupByKey{ case (node, _) => node.truncate(maxCrpDepth) }.mapGroups{ case (anc, nodesAndCounts) => (anc, nodesAndCounts.map{ case (_, count) => count}.sum) }
+
+    //val truncatedValData = validationDS.groupByKey{ case (node, _) => node.truncate(maxCrpDepth) }.mapGroups{ case (anc, nodesAndCounts) => (anc, nodesAndCounts.map{ case (_, count) => count}.sum) }
+    
+    /* TODO: [Performance] Only needs to be done once at the start, we never go deeper than the initial iteration  */
+    val truncatedValData = validationData.map(t => (t._1.truncate(maxCrpDepth), t._2)).reduceByKey{(v1,v2) => v1 + v2}
+
+    /*TODO: [Performance] Can see big improvements here by using SubtreePartitoning on Validation Data??? */
     val valHist = Histogram(
       hist.tree,
       truncatedValData.map(_._2).reduce(_+_),
       fromNodeLabelMap(
         { leafMap: LeafMap[_] =>
-          truncatedValData.groupByKey(node => leafMap.query((node._1 #:: node._1.ancestors).reverse)._1)
+            truncatedValData.map(t => { (findSubtree(t._1, leafMap.truncation.leaves), t._2) }).reduceByKey((v1, v2) => v1 + v2)
+        }.apply(crpLeafMap)
+          .collect.toMap
+      )
+    )
+
+   /* Old Dataset version (Creates non-correct histograms for some reason) */ 
+   /*
+    val valHist = Histogram(
+      hist.tree,
+      truncatedValData.map(_._2).reduce(_+_),
+      fromNodeLabelMap(
+        { leafMap: LeafMap[_] =>
+          truncatedValData.toDS
+            .groupByKey(node => leafMap.query((node._1 #:: node._1.ancestors).reverse)._1)
             .mapGroups{ case (node, nodesAndCounts) => (node, nodesAndCounts.map(_._2).sum) }
         }.apply(crpLeafMap)
         .collect.toMap
       )
     )
-    
+    */
+
     if (verbose) println("--- Computing histogram deviations from validation ---")
     val validationDeviations = getDelta(crp, valHist, verbose)
     
@@ -168,7 +215,7 @@ object MDEFunctions {
 
   def getMDE(
     hist: Histogram, 
-    validationData: Dataset[(NodeLabel, Count)], 
+    validationData: RDD[(NodeLabel, Count)], 
     k: Int, 
     verbose: Boolean = false
   ): Histogram = {

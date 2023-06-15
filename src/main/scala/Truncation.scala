@@ -193,8 +193,14 @@ case class Truncation(leaves : Vector[NodeLabel]) extends Serializable {
 
   // TODO: Optimise?
   // TODO: Figure out better error handling in case Walk starts in empty subtree!
-  def descendUntilLeafWhere(labs : Walk) : (NodeLabel, Subset) =
-    labs.zip(descend(labs)).takeWhile{case (_, ss) => ss.size > 0}.last
+  def descendUntilLeafWhere(labs : Walk) : (NodeLabel, Subset) = {
+    val l = labs.zip(descend(labs)).takeWhile{case (_, ss) => ss.size > 0}.last
+     (l._1 == leaves(l._2.lower)) match {
+        case true => l
+        case false => (l._1, Subset(0,0))
+     }
+  }
+
 
   def descendUntilLeaf(labs : Walk) : NodeLabel =
     descendUntilLeafWhere(labs)._1
@@ -258,7 +264,7 @@ object TruncationFunctions {
   }
   import DropHead._
 
-  def rpUnionNested(finer: Truncation, coarser: Truncation): Truncation = {
+  def rpUnionNestedPrime(finer: Truncation, coarser: Truncation): Truncation = {
 
     val ascsAndDescs = coarser.leaves.map( leaf => leaf -> finer.leaves.filter(maybeDesc => isAncestorOf(leaf, maybeDesc)) )
     val withMissingDescs = ascsAndDescs.flatMap{ case (asc, descs) =>
@@ -272,6 +278,127 @@ object TruncationFunctions {
 
     fromLeafSet(withMissingDescs)
 
+  }
+
+  def rpUnionNested(finer: Truncation, coarser: Truncation): Truncation = {
+   
+    def fillLeft(root : NodeLabel, leaf : NodeLabel, union : Array[NodeLabel], index : Int) : (Array[NodeLabel], Int) = {
+      var unionNew = union
+      var unionIndex = index 
+      var d = leaf.depth - root.depth - 1
+
+      while (d >= 0) {
+        if (leaf.lab.testBit(d)) {
+          unionNew(unionIndex) = NodeLabel((leaf.lab >> d).flipBit(0))
+          unionIndex += 1
+          if (unionNew.length == unionIndex) {
+            val tmp = unionNew
+            unionNew = new Array(2 * unionNew.length)
+            tmp.copyToArray(unionNew)
+          }
+        }
+        d -= 1
+      }
+
+      (unionNew, unionIndex)
+    }
+
+    def fillRight(root : NodeLabel, leaf : NodeLabel, union : Array[NodeLabel], index : Int) : (Array[NodeLabel], Int) = {
+      var unionNew = union
+      var unionIndex = index
+      val bound = leaf.depth - root.depth - 1
+
+      if (bound >= 0) {
+        for (d <- 0 to bound) {
+          if (!leaf.lab.testBit(d)) {
+            unionNew(unionIndex) = NodeLabel((leaf.lab >> d).flipBit(0))
+            unionIndex += 1
+            if (unionNew.length == unionIndex) {
+              val tmp = unionNew
+              unionNew = new Array(2 * unionNew.length)
+              tmp.copyToArray(unionNew)
+            }
+          }
+        }
+      }
+      
+      (unionNew, unionIndex)
+    }
+
+    var union : Array[NodeLabel] = new Array(2 * finer.leaves.length)
+    var unionIndex = 0
+    var coarseIndex = 0
+    var fineIndex = 0
+
+    while (coarseIndex < coarser.leaves.length) {
+
+      val ss = finer.subtree(coarser.leaves(coarseIndex))
+      if (coarser.leaves(coarseIndex) == finer.leaves(fineIndex)) {
+        union(unionIndex) = finer.leaves(fineIndex)
+        fineIndex += 1
+        unionIndex += 1
+        if (union.length == unionIndex) {
+          val tmp2 = union
+          union = new Array(2 * union.length)
+          tmp2.copyToArray(union)
+        }
+      } else if (ss.size > 0) {
+
+        /* add all leaves left of first leaf in subtree of coarse(coarseIndex) */
+        var tmp1 = fillLeft(coarser.leaves(coarseIndex), finer.leaves(fineIndex), union, unionIndex)
+        union = tmp1._1
+        unionIndex = tmp1._2
+
+        union(unionIndex) = finer.leaves(fineIndex)
+        fineIndex += 1
+        unionIndex += 1
+        if (union.length == unionIndex) {
+          val tmp2 = union
+          union = new Array(2 * union.length)
+          tmp2.copyToArray(union)
+        }
+
+        /* Find all inbetween leaves of leaves within subtree of coarse(coarseIndex) */
+        while (fineIndex < ss.upper) {
+          val commonAncestor = join(finer.leaves(fineIndex-1), finer.leaves(fineIndex))
+
+          tmp1 = fillRight(commonAncestor.left, finer.leaves(fineIndex-1), union, unionIndex)
+          union = tmp1._1
+          unionIndex = tmp1._2
+
+          tmp1 = fillLeft(commonAncestor.right, finer.leaves(fineIndex), union, unionIndex)
+          union = tmp1._1
+          unionIndex = tmp1._2
+
+          union(unionIndex) = finer.leaves(fineIndex)
+          fineIndex += 1
+          unionIndex += 1
+          if (union.length == unionIndex) {
+            val tmp2 = union
+            union = new Array(2 * union.length)
+            tmp2.copyToArray(union)
+          }
+        }
+
+        /* add all leaves right of last leaf in subtree of coarse(coarseIndex) */
+        tmp1 = fillRight(coarser.leaves(coarseIndex), finer.leaves(fineIndex-1), union, unionIndex)
+        union = tmp1._1
+        unionIndex = tmp1._2
+        
+        /* If coarser  has a forced explicit representation of an identity-mapped leaf, force that leaf upon finer aswell */
+      } else {
+          union(unionIndex) = coarser.leaves(coarseIndex) 
+          unionIndex += 1
+          if (union.length == unionIndex) {
+            val tmp2 = union
+            union = new Array(2 * union.length)
+            tmp2.copyToArray(union)
+          }
+      }
+      coarseIndex += 1
+    }
+
+    Truncation(union.dropRight(union.length - unionIndex).toVector)
   }
 
   /**

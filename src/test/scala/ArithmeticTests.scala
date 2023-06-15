@@ -1,5 +1,11 @@
 import scala.language.postfixOps
 
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.{ Dataset, SparkSession }
+import org.apache.spark.mllib.random.RandomRDDs.normalVectorRDD
+import org.apache.log4j.{ Logger, Level }
+
+import org.scalatest.BeforeAndAfterAll
 import org.apache.spark.mllib.linalg.{ Vector => MLVector, _ }
 import scala.math.abs
 
@@ -10,11 +16,26 @@ import org.scalactic.TripleEquals._
 import co.wiklund.disthist._
 import co.wiklund.disthist.Types._
 import co.wiklund.disthist.LeafMapFunctions._
+import co.wiklund.disthist.MergeEstimatorFunctions._
 import co.wiklund.disthist.SpatialTreeFunctions._
 import co.wiklund.disthist.HistogramFunctions._
 import co.wiklund.disthist.TruncationFunctions._
 
-class ArithmeticTests extends FlatSpec with Matchers {
+class ArithmeticTests extends FlatSpec with Matchers with BeforeAndAfterAll {
+
+  override protected def beforeAll: Unit = {
+    Logger.getLogger("org").setLevel(Level.ERROR)
+    Logger.getLogger("akka").setLevel(Level.ERROR)
+    val spark = SparkSession.builder.master("local").getOrCreate
+    spark.conf.set("spark.default.parallelism", "6")
+  }
+
+  private def getSpark: SparkSession = SparkSession.getActiveSession.get
+
+  override protected def afterAll: Unit = {
+    val spark = getSpark
+    spark.stop
+  }
 
   val tn: Int => NodeLabel = NodeLabel(_)
 
@@ -42,6 +63,90 @@ class ArithmeticTests extends FlatSpec with Matchers {
     val unioned = rpUnion(t1, t2)
     val expected = Truncation(Vector(16,17,9,5,6,15).map(NodeLabel(_)))
     assert(unioned === expected)
+  }
+
+  "rpUnionNested" should "generate correct trees" in {
+    val coar1 = Truncation(Vector(NodeLabel(1)))
+    val fine1 = Truncation(Vector(NodeLabel(2), NodeLabel(3)))
+    val union1 = rpUnionNested(fine1, coar1).leaves
+    assert(union1.length == 2)
+    assert(union1(0) == NodeLabel(2))
+    assert(union1(1) == NodeLabel(3))
+
+    val coar2 = Truncation(Vector(NodeLabel(2)))
+    val fine2 = Truncation(Vector(NodeLabel(8)))
+    val union2 = rpUnionNested(fine2, coar2).leaves
+    assert(union2.length == 3)
+    assert(union2(0) == NodeLabel(8))
+    assert(union2(1) == NodeLabel(9))
+    assert(union2(2) == NodeLabel(5))
+
+    val coar3 = Truncation(Vector(NodeLabel(3)))
+    val fine3 = Truncation(Vector(NodeLabel(15)))
+    val union3 = rpUnionNested(fine3, coar3).leaves
+    assert(union3.length == 3)
+    assert(union3(0) == NodeLabel(6))
+    assert(union3(1) == NodeLabel(14))
+    assert(union3(2) == NodeLabel(15))
+
+    val coar5 = Truncation(Vector(NodeLabel(1)))
+    val fine5 = Truncation(Vector(16,18,20,22,24,26,28,30).map(NodeLabel(_)))
+    val union5 = rpUnionNested(fine5, coar5).leaves
+    assert(union5.length == 16)
+    val corr5 = Vector(16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31).map(NodeLabel(_))
+    for (i <- 0 until 16) {
+       assert(union5(i) == corr5(i))
+    }
+  }
+
+  it should "generate the correct union from a coarser tree with more leaves than the finer one" in {
+    val coar4 = Truncation(Vector(NodeLabel(11), NodeLabel(12), NodeLabel(13), NodeLabel(14), NodeLabel(15)))
+    val fine4 = Truncation(Vector(NodeLabel(93), NodeLabel(98), NodeLabel(117), NodeLabel(122)))
+    val union4 = rpUnionNested(fine4, coar4).leaves
+    assert(union4.length == 17)
+    val corr4 = Vector(22,92,93,47,48,98,99,25,13,28,116,117,59,60,122,123,31).map(t => NodeLabel(t))
+    for (i <- 0 until 17) {
+       assert(union4(i) == corr4(i))
+    }
+  }
+
+  it should "generate the same union as the previous version" in {
+    val spark = getSpark
+    import spark.implicits._
+    implicit val ordering : Ordering[NodeLabel] = leftRightOrd
+   
+    val dimensions = 5
+    val sizeExp = 4
+
+    val numPartitions = 16
+    
+    val trainSize = math.pow(10, sizeExp).toLong
+    val finestResSideLength = 1e-1 
+
+    val rawTrainRDD = normalVectorRDD(spark.sparkContext, trainSize, dimensions, numPartitions, 1234567)
+
+    var rootBox = RectangleFunctions.boundingBox(rawTrainRDD)
+
+    val tree = widestSideTreeRootedAt(rootBox)
+    val finestResDepth = tree.descendBoxPrime(Vectors.dense(rootBox.low.toArray)).dropWhile(_._2.widths.max > finestResSideLength).head._1.depth
+    val stepSize = math.ceil(finestResDepth / 8.0).toInt
+
+    var countedTrain = quickToLabeled(tree, finestResDepth, rawTrainRDD)
+        
+    val countLimit = 10
+    val merged = mergeLeaves(tree, countedTrain.toDS, countLimit, stepSize, "../tmp", true).collect
+
+    val finer = Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap))
+    var coarser : Histogram = null 
+    val str = finer.backtrack({ case (_,c,_) => c }).zipWithIndex.drop(1000).takeWhile(_._2 <= 1010).map(_._1)
+    str.foreach(h => coarser = h)
+
+    val union1 = rpUnionNested(finer.counts.truncation, coarser.counts.truncation).leaves
+    val union2 = rpUnionNestedPrime(finer.counts.truncation, coarser.counts.truncation).leaves
+    assert(union1.length == union2.length)
+    for (i <- 0 until union1.length) {
+      assert(union1(i) == union2(i))
+    }
   }
 
   "mrpTransform" should "be a pointwise transformation" in {
