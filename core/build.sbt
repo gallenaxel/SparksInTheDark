@@ -21,6 +21,7 @@ libraryDependencies += "org.apache.spark" %% "spark-mllib" % "3.1.2" // % "provi
 // libraryDependencies += "org.scalaz" %% "scalaz-core" % "7.2.16"
 
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.4" % "test"
+sbtJniCoreScope := Compile
 
 //val meta = """META.INF(.)*""".r
 

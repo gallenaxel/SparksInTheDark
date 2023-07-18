@@ -21,8 +21,8 @@ import LeafMapFunctions._
 import SpatialTreeFunctions._
 import NodeLabelFunctions._
 import TruncationFunctions._
+import GslRngFunctions._
 import HistogramFunctions._
-import GslRngHandle._
 
 import org.apache.spark.mllib.linalg.Vectors
 
@@ -57,9 +57,26 @@ case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability,
    * @param sampleSize - Wanted size
    * @return A Sample of size sampleSize from the density histogram's distribution
    */
-  def sample(handle : GslRngHandle, sampleSize : Int): Array[Array[Double]] = {
-    var sampleBuf : Array[Array[Double]] = new Array(sampleSize)
-     
+  def sample(handle : GslRngHandle, sampleSize : Int): Array[Vector[Double]] = {
+
+    /* Sample which leaf to sample point from */
+    val probabilities : Array[Double] = densityMap.vals.map(_._1).toArray
+    val indexBuf : Array[Int] = gsl_ran_discrete_fill_buffer(handle.gslRngAddress, probabilities, sampleSize)
+
+    /* TODO: Is this numerically good? We will potentially transform these uniform values into very small intervals */
+    val uniformBuf = gsl_ran_flat_fill_buffer(handle.gslRngAddress, 0.0, 1.0, sampleSize * tree.dimension)
+
+    val boxes = densityMap.truncation.leaves.map(tree.cellAt(_))
+    var sampleBuf : Array[Array[Double]] = Array.ofDim[Double](sampleSize, tree.dimension)
+
+    for (i <- 0 until sampleSize) {
+      for (j <- 0 until tree.dimension) {
+        val box = boxes(indexBuf(i))
+        sampleBuf(i)(j) = box.low(j) + uniformBuf(i * tree.dimension + j) * (box.high(j) - box.low(j))
+      }
+    }
+
+    sampleBuf.map(_.toVector)
   }
 }
 
