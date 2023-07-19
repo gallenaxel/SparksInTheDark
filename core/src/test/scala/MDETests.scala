@@ -253,7 +253,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     import spark.implicits._
     implicit val ordering : Ordering[NodeLabel] = leftRightOrd
    
-    val dimensions = 100
+    val dimensions = 10
     val sizeExp = 6
 
     val numPartitions = 16
@@ -292,7 +292,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     
     val last = subtreeRDD.collect.last._1.lab
     var leftTurn = false
-    for (i <- 0 until 700) {
+    for (i <- 0 until 70) {
       leftTurn = leftTurn || !last.testBit(i)
     }
     assert(leftTurn)

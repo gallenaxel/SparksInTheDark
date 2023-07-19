@@ -50,6 +50,22 @@ case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability,
   }
 
   /**
+   * tailProbabilities - Constructs  Map of increasingly larger coverage regions. Each coverage region is the union of the
+   * previous and the next leaf whose density is the largest out of the set of leaves not yet inside a coverage region.
+   */
+  def tailProbabilities() : TailProbabilities = {
+    val quantiles = densityMap.toIterable.map {
+      case (lab, probVol) => (lab, probVol._1 / probVol._2, probVol._1)
+    }.toVector.sortBy {
+      case (lab, dens, prob) => dens
+    }.toIterable.scanLeft((rootLabel, 0.0)) {
+      case ((_, probSum), (lab, _, prob)) => (lab, probSum + prob)
+    }.toMap
+
+    TailProbabilities(tree, fromNodeLabelMap(quantiles))
+  }
+
+  /**
    * Sample from the distribution defined by the density. Note that the given handle must be a handle of a valid (allocated)
    * GNU Scientific Library random number generator (gsl_rng).
    *

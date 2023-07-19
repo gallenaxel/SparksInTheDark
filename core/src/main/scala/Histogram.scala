@@ -52,7 +52,7 @@ import HistogramUtilityFunctions._
 case class TailProbabilities(tree : SpatialTree, tails : LeafMap[Probability]) extends Serializable {
   def query(v : MLVector) : Double = {
     tails.query(tree.descendBox(v)) match {
-      case (_, None)    => 0
+      case (_, None)    => 1.0
       case (_, Some(p)) => p
     }
   }
@@ -106,7 +106,7 @@ case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Co
     log(exp(taurec) - 1) - counts.toIterable.size*taurec + logLik()
 
   /**
-   * backtrackNumSteps - Manual constrution of coarser histogram according to splitting rule, no streams, no extra allocations, no intermediate histogarm storage.
+   * backtrackNumSteps - Manual constrution of coarser histogram according to splitting rule, no streams, no extra allocations, no intermediate histogram storage.
    * @param prio - Priority function used in splitting
    * @param numSteps - Number of splits to backtrack
    */
@@ -148,7 +148,7 @@ case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Co
       nonCherryLeafMap += x._1.sibling -> x
     })
   
-    /* Remove cherry from queue (merge). If its siblign exist in the leafmap, add new cherry to queue, otherwise
+    /* Remove cherry from queue (merge). If its sibling exist in the leafmap, add new cherry to queue, otherwise
      * map the cherry's sibing to the cherry
      */
     for (step <- 1 to numSteps) {
@@ -248,7 +248,7 @@ case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Co
         nonCherryLeafMap += x._1.sibling -> x
       })
     
-      /* Remove cherry from queue (merge). If its siblign exist in the leafmap, add new cherry to queue, otherwise
+      /* Remove cherry from queue (merge). If its sibling exist in the leafmap, add new cherry to queue, otherwise
        * map the cherry's sibing to the cherry
        */
       for (step <- 1 to numSteps) {
