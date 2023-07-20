@@ -26,6 +26,9 @@ import HistogramFunctions._
 
 import org.apache.spark.mllib.linalg.Vectors
 
+/**
+ * NOTE: Probability == Density! 
+ */
 case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability, Volume)]) {
   def density(v: MLVector): Probability = {
     val point = v.toArray
@@ -50,17 +53,19 @@ case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability,
   }
 
   /**
-   * tailProbabilities - Constructs  Map of increasingly larger coverage regions. Each coverage region is the union of the
+   * tailProbabilities - Constructs Map of increasingly larger coverage regions. Each coverage region is the union of the
    * previous and the next leaf whose density is the largest out of the set of leaves not yet inside a coverage region.
+   *
+   * NOTE: density / volume ratio may become very large for higher dimensions => Perhaps this will affect numerical stability?
    */
   def tailProbabilities() : TailProbabilities = {
     val quantiles = densityMap.toIterable.map {
-      case (lab, probVol) => (lab, probVol._1 / probVol._2, probVol._1)
+      case (lab, densVol) => (lab, densVol._1, densVol._1 * densVol._2)
     }.toVector.sortBy {
       case (lab, dens, prob) => dens
     }.toIterable.scanLeft((rootLabel, 0.0)) {
       case ((_, probSum), (lab, _, prob)) => (lab, probSum + prob)
-    }.toMap
+    }.tail.toMap
 
     TailProbabilities(tree, fromNodeLabelMap(quantiles))
   }

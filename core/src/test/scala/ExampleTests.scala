@@ -307,8 +307,6 @@ class SongExamples extends FlatSpec with Matchers with BeforeAndAfterAll {
     val rngHandle = new GslRngHandle(1235)
 
     val testData = testRDD.collect  
-
-
     
     var wantedConfidence = 0.95
     var withinCoverageRegion : Int = 0
@@ -339,7 +337,7 @@ class SongExamples extends FlatSpec with Matchers with BeforeAndAfterAll {
       if (coverageRegionConfidence <= wantedConfidence) { 
         withinCoverageRegion += 1
       }
-      println("Confidence, withinConfidenceRegion: " + wantedConfidence + ", " + withinCoverageRegion.toDouble / (i+1))
+      println("Confidence, withinConfidenceRegion:  " + wantedConfidence + ", " + withinCoverageRegion.toDouble / (i+1))
 
       /* Generate a sample from the conditional distribution */
       val prediction = ((conditional.sample(rngHandle, 1))(0))(0)

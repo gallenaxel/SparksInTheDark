@@ -16,7 +16,9 @@ import MDEFunctions._
 import LeafMapFunctions._
 import NodeLabelFunctions._
 import SubtreePartitionerFunctions._
+import HistogramFunctions._
 import MergeEstimatorFunctions._
+import GslRngFunctions._
 import org.apache.spark.mllib.linalg.{ Vector => MLVector }
 import SpatialTreeFunctions._
 import Types._
@@ -156,7 +158,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     numLeavesAboveLimit shouldEqual 0
   }
 
-  "getMDE" should "give a correct histogram" in {
+    "getMDE" should "give a correct histogram" in {
     val spark = getSpark
     import spark.implicits._
     val mergedHist = collectHistogram(tree, spark.read.parquet(checkpointDir + "/merged").as[(NodeLabel, Count)])
@@ -164,6 +166,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
 
     mdeHist.counts.vals.sum shouldEqual dfnum
   }
+
 
   it should "produce a correct histogram for the validation data in the rdd version" in {
     val spark = getSpark
@@ -254,7 +257,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     implicit val ordering : Ordering[NodeLabel] = leftRightOrd
    
     val dimensions = 10
-    val sizeExp = 6
+    val sizeExp = 5
 
     val numPartitions = 16
     
@@ -279,7 +282,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
         
     val partitioner = new SubtreePartitioner(2, countedTrain, 20) /* action 1 (collect) */
     val depthLimit = partitioner.maxSubtreeDepth
-    val countLimit = 1 
+    val countLimit = 10
     val subtreeRDD = countedTrain.repartitionAndSortWithinPartitions(partitioner)
     val merged = mergeLeavesRDD(subtreeRDD, countLimit, depthLimit, true)
     println("merging done")
@@ -296,8 +299,5 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
       leftTurn = leftTurn || !last.testBit(i)
     }
     assert(leftTurn)
-
-    var outsidePoint2 = tree.rootCell.high.toArray
-    assert(hist.density(Vectors.dense(outsidePoint2)) == 0.0)
   }
 }

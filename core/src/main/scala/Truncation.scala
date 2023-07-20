@@ -194,7 +194,12 @@ case class Truncation(leaves : Vector[NodeLabel]) extends Serializable {
   // TODO: Optimise?
   // TODO: Figure out better error handling in case Walk starts in empty subtree!
   def descendUntilLeafWhere(labs : Walk) : (NodeLabel, Subset) = {
-    val l = labs.zip(descend(labs)).takeWhile{case (_, ss) => ss.size > 0}.last
+    var l : (NodeLabel, Subset) = null
+    try {
+      l = labs.zip(descend(labs)).takeWhile{case (_, ss) => ss.size > 0}.last
+    } catch {
+      case e : NoSuchElementException => l = (NodeLabel(1), Subset(0,0))
+    }
      (l._1 == leaves(l._2.lower)) match {
         case true => l
         case false => (l._1, Subset(0,0))

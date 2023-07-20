@@ -3,19 +3,19 @@
 
 #include "gsl_wrapper.h"
 
-JNIEXPORT jlong JNICALL Java_co_wiklund_disthist_GslRngHandle_wrap_1gsl_1rng_1alloc(JNIEnv *env, jobject obj)
+JNIEXPORT jlong JNICALL Java_co_wiklund_disthist_GslRngHandle_gsl_1rng_1alloc(JNIEnv *env, jobject obj)
 {
 	/*TODO: Setup type choice */
 	const gsl_rng_type *type = gsl_rng_default;
 	return (jlong) gsl_rng_alloc(type);
 }
 
-JNIEXPORT void JNICALL Java_co_wiklund_disthist_GslRngHandle_wrap_1gsl_1rng_1set(JNIEnv *env, jobject obj, jlong gslRngAddress, jlong seed)
+JNIEXPORT void JNICALL Java_co_wiklund_disthist_GslRngHandle_gsl_1rng_1set(JNIEnv *env, jobject obj, jlong gslRngAddress, jlong seed)
 {
 	gsl_rng_set((gsl_rng *) gslRngAddress, seed);
 }
 
-JNIEXPORT void JNICALL Java_co_wiklund_disthist_GslRngHandle_wrap_1gsl_1rng_1free(JNIEnv *env, jobject obj, jlong gslRngAddress)
+JNIEXPORT void JNICALL Java_co_wiklund_disthist_GslRngHandle_gsl_1rng_1free(JNIEnv *env, jobject obj, jlong gslRngAddress)
 {
 	gsl_rng_free((void *) gslRngAddress);		
 }
@@ -48,7 +48,6 @@ JNIEXPORT jintArray JNICALL Java_co_wiklund_disthist_GslRngFunctions_00024_gsl_1
 JNIEXPORT jdoubleArray JNICALL Java_co_wiklund_disthist_GslRngFunctions_00024_gsl_1ran_1flat_1fill_1buffer
   (JNIEnv *env, jobject obj, jlong gsl_rng_address, jdouble min, jdouble max, jint sample_size)
 {
-
 	jdoubleArray j_buf = (*env)->NewDoubleArray(env, sample_size);
 	jdouble *buf = malloc(sample_size * sizeof(jdouble));
 
@@ -64,4 +63,26 @@ JNIEXPORT jdoubleArray JNICALL Java_co_wiklund_disthist_GslRngFunctions_00024_gs
 	free(buf);
 
 	return j_buf;
+}
+
+JNIEXPORT jint JNICALL Java_co_wiklund_disthist_GslRngFunctions_00024_gsl_1ran_1discrete
+  (JNIEnv *env, jobject obj, jlong gsl_rng_address, jdoubleArray j_probabilities)
+{
+	const jsize probabilities_len = (*env)->GetArrayLength(env, j_probabilities);
+	const jdouble *probabilities = (*env)->GetDoubleArrayElements(env, j_probabilities, 0);
+
+	const gsl_ran_discrete_t *table = gsl_ran_discrete_preproc(probabilities_len, probabilities);
+
+	const jint sample = gsl_ran_discrete((gsl_rng *) gsl_rng_address, table); 
+
+	(*env)->ReleaseDoubleArrayElements(env, j_probabilities, probabilities, 0);
+	gsl_ran_discrete_free(table);
+
+	return sample;
+}
+
+JNIEXPORT jdouble JNICALL Java_co_wiklund_disthist_GslRngFunctions_00024_gsl_1ran_1flat
+  (JNIEnv * env, jobject obj, jlong gsl_rng_address, jdouble min, jdouble max)
+{
+	return gsl_ran_flat((gsl_rng *) gsl_rng_address, min, max); 
 }
