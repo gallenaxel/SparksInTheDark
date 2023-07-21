@@ -198,9 +198,10 @@ case class Truncation(leaves : Vector[NodeLabel]) extends Serializable {
     try {
       l = labs.zip(descend(labs)).takeWhile{case (_, ss) => ss.size > 0}.last
     } catch {
-      case e : NoSuchElementException => l = (NodeLabel(1), Subset(0,0))
+      case e : NoSuchElementException => return (NodeLabel(1), Subset(0,0))
     }
-     (l._1 == leaves(l._2.lower)) match {
+
+    (l._1 == leaves(l._2.lower)) match {
         case true => l
         case false => (l._1, Subset(0,0))
      }

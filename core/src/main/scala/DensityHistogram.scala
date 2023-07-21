@@ -16,6 +16,8 @@
 
 package co.wiklund.disthist
 
+import java.math.BigInteger
+
 import Types._
 import LeafMapFunctions._
 import SpatialTreeFunctions._
@@ -284,6 +286,168 @@ object HistogramFunctions {
     }.toMap
 
     DensityHistogram(slicedTree, fromNodeLabelMap(slicedNodeMap))
+  }
+
+  def quickSlice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoint: Vector[Double], splitOrder : Array[Axis], sliceLeavesBufC : Array[NodeLabel] = null, sliceValuesBufC : Array[(Probability,Volume)] = null) : DensityHistogram = {
+    quickSlice(densHist, sliceAxes, Vectors.dense(slicePoint.toArray), splitOrder, sliceLeavesBufC, sliceValuesBufC)
+  }
+
+  /**
+   * quickSlice - Quick implementation of slice. Finds the conditional distribution of the density when conditioning on the 
+   *              dimensions given in sliceAxes with their respective points set in slicePoint. For example:
+   *              [Non-normalised] f(x_0 | X_1=x_1, X_2=x_2) => [sliceAxes=Vector(1,2), slicePoint=Vector(x1,x2)]
+   *
+   * @param densHist - Density Histogram to retrieve conditional density from
+   * @param sliceAxes - Indices of dimensions to condition on
+   * @param slicePoint - Point to condition on
+   * @param splitOrder - Precalculated splitOrder. The array must contain enough splits for us to traverse down to the deepest leaf.
+   *              It is thus suitable to simply calculate the splitOrder all the way down to the depth chosen to merge up from
+   *              at the merging/backtracking stage of the construction of the histogram.
+   * @param sliceLeavesBufC - Buffer to be used for conditional leaves, must be large enough to hold all conditional leaves
+   * @param sliceValuesBufC - Buffer to be used for conditional leaf values must be large enough to hold all conditional leaf values
+   * @return The conditional (non-normalised) histogram on If the slice point was found to be within at least one leaf. If no 
+   *              no leaf was sliced, return null.
+   */
+  def quickSlice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoint: MLVector, splitOrder : Array[Axis], sliceLeavesBufC : Array[NodeLabel], sliceValuesBufC : Array[(Probability,Volume)]) : DensityHistogram = {
+
+    /* Check if slice point is within possible slice region */
+    for (i <- 0 until sliceAxes.length) {
+      if (slicePoint(i) < densHist.tree.rootCell.low(sliceAxes(i)) || densHist.tree.rootCell.high(sliceAxes(i)) < slicePoint(i)) {
+        return null
+      }
+    }
+    
+    val nonSliceAxes = ((0 to densHist.tree.dimension - 1).toSet -- sliceAxes).toVector
+    val slicedRootBox = marginalizeRectangle(densHist.tree.rootCell, nonSliceAxes)
+    val slicedTree = widestSideTreeRootedAt(slicedRootBox)
+
+    val leaves = densHist.densityMap.truncation.leaves
+    val densMap = densHist.densityMap.toMap
+
+    var sliceLeavesBuf = sliceLeavesBufC
+    var sliceValuesBuf = sliceValuesBufC
+    if (sliceLeavesBuf == null) { sliceLeavesBuf = new Array(leaves.length) }
+    if (sliceValuesBuf == null) { sliceValuesBuf = new Array(leaves.length) }
+
+    /* Reusable Array of box dimensions */
+    var low : Array[Double] = densHist.tree.rootCell.low.toArray
+    var high : Array[Double] = densHist.tree.rootCell.high.toArray
+
+    /* extend slicePoint to full dimension for ease of use later */
+    var slicePointExtended : Array[Double] = new Array(densHist.tree.rootCell.dimension)
+
+    /* table of what axes need bit in new representation */
+    var splitToBitNeeded : Array[Int] = new Array(densHist.tree.rootCell.dimension)
+
+    var k = 0
+    for (i <- 0 until splitToBitNeeded.length) {
+      if (k < sliceAxes.length && i == sliceAxes(k)) {
+        slicePointExtended(i) = slicePoint(k)
+        splitToBitNeeded(sliceAxes(k)) = 0
+        k += 1
+      } else {
+        splitToBitNeeded(i) = 1
+        slicePointExtended(i) = 0.0
+      }
+    }
+
+    /* old to new depth table */
+    var oldToNewDepth : Array[Int] = new Array(splitOrder.length + 1)
+    var newDepth = 0
+    oldToNewDepth(0) = newDepth 
+
+    for (i <- 1 until oldToNewDepth.length) {
+      newDepth += splitToBitNeeded(splitOrder(i-1))
+      oldToNewDepth(i) = newDepth
+    }
+
+    /* Get max depth and construct bit array which fit all possible new labels */
+    val maxDepth = oldToNewDepth.last
+    var numBits = maxDepth + 2
+    val rest = numBits % 8 
+    if (rest > 0) { 
+       numBits += (8 - rest)
+    }
+    var bits : Array[Byte] = new Array(numBits / 8)
+
+    var bufIndex = 0
+    for (i <- 0 until leaves.length) {
+
+      val depth = oldToNewDepth(leaves(i).depth)
+
+      /* clear bits */
+      for (i <- 0 until bits.length) { 
+        bits(i) = 0
+      }
+      
+      /* Keeps track of where we are in new Byte Array */
+      var bit = numBits - (depth + 1)
+      var byte = bit / 8 
+      var shift = 7 - (bit % 8)
+
+      /* Root bit = 1 */
+      bits(byte) = bits(byte).|(1 << shift).toByte
+
+      var keep = true
+      var j = 0
+
+      while (j < leaves(i).depth) {
+
+        val isRight = leaves(i).lab.testBit(leaves(i).depth - j - 1)
+
+        /* Split is happening in non-conditioned axes, will be represented in new label */
+        if (splitToBitNeeded(splitOrder(j)) == 1) {
+          bit += 1
+          byte = bit / 8
+          shift = 7 - (bit % 8)
+          if (isRight) {
+            bits(byte) = bits(byte).|(1 << shift).toByte 
+          }
+
+        /* Keep track of label's box in the slice axes */
+        } else {
+          val mid = (low(splitOrder(j)) + high(splitOrder(j))) / 2.0
+          if (isRight) {
+            low(splitOrder(j)) = mid 
+          
+            /* if slicePoint is no longer in box, the leaf will not be represented in the conditional density */
+            if (slicePointExtended(splitOrder(j)) < mid) {
+              j = leaves(i).depth
+              keep = false
+            }
+          } else {
+            high(splitOrder(j)) = mid 
+
+            /* if slicePoint is no longer in box, the leaf will not be represented in the conditional density */
+            if (slicePointExtended(splitOrder(j)) > mid) {
+              j = leaves(i).depth
+              keep = false
+            }
+          }
+        }
+
+        j += 1
+      }
+
+      /* IF (keep) DO update buffers using newLabel, splitBox, update buffer index */
+      if (keep) {
+        sliceLeavesBuf(bufIndex) = NodeLabel(new BigInt(new BigInteger(bits)))
+        val volume = slicedTree.volumeAt(sliceLeavesBuf(bufIndex))
+        sliceValuesBuf(bufIndex) = (densMap(leaves(i))._1, volume)
+        bufIndex += 1
+      }
+
+      /* Reset splitBox */
+      densHist.tree.rootCell.low.copyToArray(low)
+      densHist.tree.rootCell.high.copyToArray(high)
+    }
+
+    if (bufIndex > 0) {
+      val slicedNodeMap = (sliceLeavesBuf.take(bufIndex) zip sliceValuesBuf.take(bufIndex)).toMap
+      DensityHistogram(slicedTree, fromNodeLabelMap(slicedNodeMap))
+    } else {
+      null
+    }
   }
 
   def toCollatedHistogram[K](hist: Histogram, key: K): CollatedHistogram[K] = {

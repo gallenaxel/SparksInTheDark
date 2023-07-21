@@ -310,38 +310,224 @@ class SongExamples extends FlatSpec with Matchers with BeforeAndAfterAll {
     
     var wantedConfidence = 0.95
     var withinCoverageRegion : Int = 0
-    for (i <- 0 until 1000) {
-    //for (i <- 0 until testData.length) {
+    //for (i <- 0 until 1000) {
+    for (i <- 0 until testData.length) {
 
       /* TODO: Why is slice written for Vector[double] while mergestuff happens in MLVector ... very bad this */
       /* Drop year, we wish to condition on the timbres */
-      val slicePoints : Vector[Double] = testData(i).toArray.toVector.drop(1) 
+      val slicePoint : Vector[Double] = testData(i).toArray.toVector.drop(1) 
   
       /* Note: We give indices here, 0 == First axis, 1 == Second axis and so on... */
       val sliceAxes : Vector[Axis] = Vector(1,2,3,4,5,6,7,8,9,10,11,12) 
 
-      /* TODO: What happens if slicePoint is not within rootBox? Possible bug... */ 
+      val tree : WidestSplitTree = WidestSplitTree(density.tree.rootCell) 
+      val splitOrder = tree.splitOrderToDepth(finestResDepth)
+      var sliceLeavesBuf : Array[NodeLabel] = new Array(density.densityMap.truncation.leaves.length)
+      var sliceValuesBuf : Array[(Probability,Volume)] = new Array(density.densityMap.truncation.leaves.length)
+      var conditional = quickSlice(density, sliceAxes, slicePoint, splitOrder)
+
       /* Conditional Density */
-      val conditional = slice(density, sliceAxes, slicePoints).normalize
+      //val conditionalOld = slice(density, sliceAxes, slicePoint).normalize
+      //val leaves1 = conditional.densityMap.truncation.leaves
+      //val leaves2 = conditionalOld.densityMap.truncation.leaves
+      //val vals1 = conditional.densityMap.vals
+      //val vals2 = conditionalOld.densityMap.vals
 
-      /**
-       * Get a Map of leaf -> last element in Coverage Region.  If we wish to determine whether a point V found in leaf L
-       * exist in the coverage region of confidence 0 < C <= 1, we simply check if Map(L) <= C. If the statement is true,
-       * V was found to be within the coverage region of confidence C.
-       */
-      val coverageRegions = conditional.tailProbabilities
+      //println("LENGTHS: " + leaves1.length + ", " + leaves2.length)
+      //var prob1 : Double = 0
+      //var prob2 : Double = 0
+      //for (j <- 0 until leaves1.length) {
+      //  println("leaves: " + leaves1(j) + ", " + leaves2(j))
+      //  println("values: " + vals1(j) + ", " + vals2(j))
+      //  prob1 += vals1(j)._1 * vals1(j)._2
+      //  prob2 += vals2(j)._1 * vals2(j)._2
+      //  assert(leaves1(j) == leaves2(j))
+      //}
+      //assert(leaves1.length == leaves2.length)
 
-      /* Retrieve confidence region */
-      val coverageRegionConfidence  = coverageRegions.query(Vectors.dense(Array((testData(i))(0))))
+      //for (j <- 1 to 100) {
+      //  println("Slice: " + j)
+      //  val cawd = slice(density, sliceAxes, slicePoints)
+      //}
 
-      if (coverageRegionConfidence <= wantedConfidence) { 
-        withinCoverageRegion += 1
+      //for (j <- 0 until testData.length) {
+      //  println("Quick slice " + j)
+      //  val cawd = quickSlice(density, sliceAxes, testData(j).toArray.toVector.drop(1), splitOrder, sliceLeavesBuf, sliceValuesBuf)
+      //}
+      //
+      
+
+      if (conditional != null) {
+        conditional = conditional.normalize
+        /**
+         * Get a Map of leaf -> last element in Coverage Region.  If we wish to determine whether a point V found in leaf L
+         * exist in the coverage region of confidence 0 < C <= 1, we simply check if Map(L) <= C. If the statement is true,
+         * V was found to be within the coverage region of confidence C.
+         */
+        val coverageRegions = conditional.tailProbabilities
+
+        /* Retrieve confidence region */
+        val coverageRegionConfidence  = coverageRegions.query(Vectors.dense(Array((testData(i))(0))))
+
+        if (coverageRegionConfidence <= wantedConfidence) { 
+          withinCoverageRegion += 1
+        }
+        println("Confidence, withinConfidenceRegion:  " + wantedConfidence + ", " + withinCoverageRegion.toDouble / (i+1))
+
+        /* Generate a sample from the conditional distribution */
+        if (conditional.densityMap.truncation.leaves.length > 0) {
+          val prediction = ((conditional.sample(rngHandle, 1))(0))(0)
+          //println("TRUE, PREDICTED: " + (testData(i))(0) + ", " + prediction)
+        }
       }
-      println("Confidence, withinConfidenceRegion:  " + wantedConfidence + ", " + withinCoverageRegion.toDouble / (i+1))
+    }
+  
+    /* Free Resources */
+    rngHandle.free
+  }
+}
 
-      /* Generate a sample from the conditional distribution */
-      val prediction = ((conditional.sample(rngHandle, 1))(0))(0)
-      println("TRUE, PREDICTED: " + (testData(i))(0) + ", " + prediction)
+class NormalExamples extends FlatSpec with Matchers with BeforeAndAfterAll {
+
+  override protected def beforeAll: Unit = {
+    Logger.getLogger("org").setLevel(Level.ERROR)
+    Logger.getLogger("akka").setLevel(Level.ERROR)
+    val spark = SparkSession.builder.master("local").getOrCreate
+  }
+
+  private def getSpark: SparkSession = SparkSession.getActiveSession.get
+
+  override protected def afterAll: Unit = {
+    val spark = getSpark
+    spark.stop
+  }
+  
+  implicit val ordering : Ordering[NodeLabel] = leftRightOrd
+
+  "Normal Regression Analysis" should "work" in {
+    val spark = getSpark
+    import spark.implicits._
+ 
+    val dimensions = 5
+    val sizeExp = 6
+    val numPartitions = 64
+    spark.conf.set("spark.default.parallelism", numPartitions.toString)
+    
+    val trainSize = math.pow(10, sizeExp).toLong
+    val finestResSideLength = 1e-5 
+  
+    val trainingRDD = normalVectorRDD(spark.sparkContext, trainSize, dimensions, numPartitions, 1230568)
+    val validationRDD =  normalVectorRDD(spark.sparkContext, trainSize/2, dimensions, numPartitions, 5465694)
+    val testRDD =  normalVectorRDD(spark.sparkContext, 1000, dimensions, numPartitions, 6949239)
+
+  
+    /* Get boxhull of training data and test data */
+    var rectTrain = RectangleFunctions.boundingBox(trainingRDD)
+    var rectValidation = RectangleFunctions.boundingBox(validationRDD)
+    val rootBox = RectangleFunctions.hull(rectTrain, rectValidation)
+  
+    val tree = widestSideTreeRootedAt(rootBox)
+    val finestResDepth = tree.descendBoxPrime(Vectors.dense(rootBox.low.toArray)).dropWhile(_._2.widths.max > finestResSideLength).head._1.depth
+    val stepSize = math.ceil(finestResDepth / 8.0).toInt
+    val kInMDE = 10
+  
+    /**
+     * Label each datapoint by the label of the box at depth (finestResDepth) which it resides in, and count number of datapoints
+     * found in occupied boxes.
+     */
+    var countedTrain = quickToLabeled(tree, finestResDepth, trainingRDD)
+    var countedValidation = quickToLabeled(tree, finestResDepth, validationRDD)
+        
+    val sampleSizeHint = 1000
+    val partitioner = new SubtreePartitioner(numPartitions, countedTrain, sampleSizeHint)
+    val depthLimit = partitioner.maxSubtreeDepth
+    val countLimit = 400 
+    val subtreeRDD = countedTrain.repartitionAndSortWithinPartitions(partitioner)
+    val merged = mergeLeavesRDD(subtreeRDD, countLimit, depthLimit)
+  
+    val density = toDensityHistogram(getMDE(
+      Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap)), 
+      countedValidation, 
+      kInMDE, 
+      false 
+    ))
+
+    /* Allocate Gnu Scientific Library RNG using given seed */
+    val rngHandle = new GslRngHandle(1235)
+
+    val testData = testRDD.collect  
+    
+    var wantedConfidence = 0.95
+    var withinCoverageRegion : Int = 0
+    for (i <- 0 until testData.length) {
+
+      /* TODO: Why is slice written for Vector[double] while mergestuff happens in MLVector ... very bad this */
+      /* Drop year, we wish to condition on the timbres */
+      val slicePoint : Vector[Double] = testData(i).toArray.toVector.drop(1) 
+  
+      /* Note: We give indices here, 0 == First axis, 1 == Second axis and so on... */
+      val sliceAxes : Vector[Axis] = Vector(1,2,3,4) 
+
+      val tree : WidestSplitTree = WidestSplitTree(density.tree.rootCell) 
+      val splitOrder = tree.splitOrderToDepth(finestResDepth)
+      var sliceLeavesBuf : Array[NodeLabel] = new Array(density.densityMap.truncation.leaves.length)
+      var sliceValuesBuf : Array[(Probability,Volume)] = new Array(density.densityMap.truncation.leaves.length)
+      var conditional = quickSlice(density, sliceAxes, slicePoint, splitOrder)
+
+      /* Conditional Density */
+      //val conditionalOld = slice(density, sliceAxes, slicePoint).normalize
+      //val leaves1 = conditional.densityMap.truncation.leaves
+      //val leaves2 = conditionalOld.densityMap.truncation.leaves
+      //val vals1 = conditional.densityMap.vals
+      //val vals2 = conditionalOld.densityMap.vals
+
+      //println("LENGTHS: " + leaves1.length + ", " + leaves2.length)
+      //var prob1 : Double = 0
+      //var prob2 : Double = 0
+      //for (j <- 0 until leaves1.length) {
+      //  println("leaves: " + leaves1(j) + ", " + leaves2(j))
+      //  println("values: " + vals1(j) + ", " + vals2(j))
+      //  prob1 += vals1(j)._1 * vals1(j)._2
+      //  prob2 += vals2(j)._1 * vals2(j)._2
+      //  assert(leaves1(j) == leaves2(j))
+      //}
+      //assert(leaves1.length == leaves2.length)
+
+      //for (j <- 1 to 100) {
+      //  println("Slice: " + j)
+      //  val cawd = slice(density, sliceAxes, slicePoints)
+      //}
+
+      //for (j <- 0 until testData.length) {
+      //  println("Quick slice " + j)
+      //  val cawd = quickSlice(density, sliceAxes, testData(j).toArray.toVector.drop(1), splitOrder, sliceLeavesBuf, sliceValuesBuf)
+      //}
+      //
+      
+
+      if (conditional != null) {
+        conditional = conditional.normalize
+        /**
+         * Get a Map of leaf -> last element in Coverage Region.  If we wish to determine whether a point V found in leaf L
+         * exist in the coverage region of confidence 0 < C <= 1, we simply check if Map(L) <= C. If the statement is true,
+         * V was found to be within the coverage region of confidence C.
+         */
+        val coverageRegions = conditional.tailProbabilities
+
+        /* Retrieve confidence region */
+        val coverageRegionConfidence  = coverageRegions.query(Vectors.dense(Array((testData(i))(0))))
+
+        if (coverageRegionConfidence <= wantedConfidence) { 
+          withinCoverageRegion += 1
+        }
+        println("Confidence, withinConfidenceRegion:  " + wantedConfidence + ", " + withinCoverageRegion.toDouble / (i+1))
+
+        /* Generate a sample from the conditional distribution */
+        if (conditional.densityMap.truncation.leaves.length > 0) {
+          val prediction = ((conditional.sample(rngHandle, 1))(0))(0)
+          //println("TRUE, PREDICTED: " + (testData(i))(0) + ", " + prediction)
+        }
+      }
     }
   
     /* Free Resources */

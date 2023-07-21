@@ -100,6 +100,32 @@ case class WidestSplitTree(rootCellM : Rectangle) extends SpatialTree {
     }
 
   /**
+   * splitOrderToDepth - Determine the order of splits until the given depth has been reached.
+   *
+   * @param depth - The given depth to determine the order down to
+   * @return Array of axis indices where axisIndex = Array[i] determine what axis was split in the (i+1):th split.
+   */
+  def splitOrderToDepth(depth : Depth) : Array[Axis] = {
+    var widths = rootCell.widths.toArray
+    var splitOrder : Array[Axis] = new Array(depth)
+    
+    for (i <- 0 until depth) {
+      var maxIndex = 0
+      var maxVal = widths(maxIndex)
+      for (j <- 1 until rootCell.dimension) {
+        if (maxVal < widths(j)) {
+          maxIndex = j
+          maxVal = widths(j)
+        }
+      }
+      splitOrder(i) = maxIndex 
+      widths(maxIndex) = maxVal / 2
+    }
+
+    splitOrder
+  }
+
+  /**
    * quickDescendBox - Quick splitting of single points down to given depth. Reuses arrays and uses
    *  bit operations directly on bitstring to avoid unecessary allocations.
    */
@@ -151,23 +177,9 @@ case class WidestSplitTree(rootCellM : Rectangle) extends SpatialTree {
       numBits = numBits + (8 - rest)
     } 
     var bits : Array[Byte] = new Array(numBits / 8)
-    val splitOrder : Array[Depth] = new Array(depth)
+    val splitOrder : Array[Depth] = splitOrderToDepth(depth)
     val low  : Array[Double] = new Array(rootCell.dimension)
     val high  : Array[Double] = new Array(rootCell.dimension)
-    var widths = rootCell.widths.toArray
-    
-    for (i <- 0 until depth) {
-      var maxIndex = 0
-      var maxVal = widths(maxIndex)
-      for (j <- 1 until rootCell.dimension) {
-        if (maxVal < widths(j)) {
-          maxIndex = j
-          maxVal = widths(j)
-        }
-      }
-      splitOrder(i) = maxIndex 
-      widths(maxIndex) = maxVal / 2
-    }
 
     points.map(point => quickDescendBox(bits, numBits, low, high, splitOrder, point, rootCell.dimension, depth))
   }
