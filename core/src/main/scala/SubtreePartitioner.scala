@@ -17,9 +17,7 @@
 package co.wiklund.disthist
 
 import scala.util.Random
-import scala.util.Random._
 import scala.collection.mutable.HashMap
-import scala.collection.mutable.HashMap._
 import scala.collection.mutable.PriorityQueue
 import scala.math.{max,floor,round,exp,log,log10,pow}
 
@@ -30,8 +28,8 @@ import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 import scala.util.hashing.byteswap32
 
-import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
 import org.apache.spark.Partitioner
+import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
 import org.apache.spark.serializer.JavaSerializer
 import org.apache.spark.util.{CollectionsUtils, Utils}
 
@@ -44,17 +42,31 @@ import org.apache.spark.RangePartitioner
 import org.apache.spark.rdd.RDD
 
   /**
-   * NOTE: Slightly adjusted RangePartitioner Source Code from spark to suite our needs. The idea of estimating subtrees is almost equivalent to distributed sorting;
+   * NOTE: Slightly adjusted RangePartitioner Source Code from Spark to suite our needs. The idea of estimating subtrees is almost equivalent to distributed sorting;
    *  the only difference being in the last stage when the estimated range bounds are being calculated. We create weighted subtrees and send them to partitions instead of slicing
    *  the data in ranges.
    *
-   * SubtreePartitioner - TODO 
-   * @param 
-   * @param 
+   * SubtreePartitioner - Partitioner that estimates how the cell data is distributed among the branches of the binary space partitioning tree. The partitioner
+   *                      finds large subtrees of data and map the subtrees to partitions. Every generated subtree is given a weight depending on how many data points
+   *                      where found in the subtree and can be calculated summing up all the data points individual weights. A data point is given a weight according to
+   *                      how many points it represent from the partition it was sampled from. If you sample 2 points from a partition of 10 points, the two points will
+   *                      both be given a weight of 5.0.
+   *
+   *                      It follows that every generated subtree's weight represents the estimated work that it will take to merge cells within the subtree. After the
+   *                      subtrees have been generated, the Partitioner creates a HashMap that maps every subtree or subtrees with no representation (no sampled points found
+   *                      in the subtree) to individual partitions which should reign over the subtrees' data points. The subtrees are assigned to partitions in such a manner
+   *                      to minimize the weight of the heaviest partition. This is done by the simple approximation algorithm in which you iteratively assign the heaviest
+   *                      or most costly object to the partition or machine with the lowest load until all objects have been assigned. 
+   *
+   * @param partitions - The number of wanted partitions when partitioning using the Partitioner
+   * @param rdd - RDD contain cell (NodeLabel, Count) daa
+   * @param samplePointsPerPartitionHint - The sampleSize roughly used per new partition. The total sample size to estimate
+   *    data distribution among subtrees of the data to base the Partitioning scheme on can be estimated to be 
+   *    c * hint * numPartitions where 1 <= c <= 3.
    */
 class SubtreePartitioner(partitions : Int, rdd : RDD[(NodeLabel, Count)], val samplePointsPerPartitionHint : Int = 20) extends Partitioner {
   
-   // We allow partitions = 0, which happens when sorting an empty RDD under the default settings.
+   /* We allow partitions = 0, which happens when sorting an empty RDD under the default settings. */
   require(partitions >= 0, s"Number of partitions cannot be negative but found $partitions.")
   require(samplePointsPerPartitionHint > 0,
     s"Sample points per partition must be greater than 0 but found $samplePointsPerPartitionHint")
@@ -63,15 +75,15 @@ class SubtreePartitioner(partitions : Int, rdd : RDD[(NodeLabel, Count)], val sa
 
   val subtrees : Array[(NodeLabel, Float)] = {
     if (partitions <= 1) {
-      /*TODO FIX so that it works for 1 partition */
       Array((rootLabel, 1))
     } else {
-      // This is the sample size we need to have roughly balanced output partitions, capped at 1M.
-      // Cast to double to avoid overflowing ints or longs
+      /**
+       * This is the sample size we need to have roughly balanced output partitions, capped at 1M.
+       * Cast to double to avoid overflowing ints or longs
+       */
       val sampleSize = math.min(samplePointsPerPartitionHint.toFloat * partitions, 1e6)
-      // Assume the input partitions are roughly balanced and over-sample a little bit.
+      /* Assume the input partitions are roughly balanced and over-sample a little bit. */
       val sampleSizePerPartition = math.ceil(3.0 * sampleSize / rdd.partitions.length).toInt
-      //TODO
       val (numItems, sketched) = sketch(rdd.map(_._1), sampleSizePerPartition)
       if (numItems == 0L) {
         throw new IllegalArgumentException("Could not sample any points from partition, is it empty?")
@@ -93,10 +105,9 @@ class SubtreePartitioner(partitions : Int, rdd : RDD[(NodeLabel, Count)], val sa
           }
         }
         if (imbalancedPartitions.nonEmpty) {
-          // Re-sample imbalanced partitions with the desired sampling probability.
+          /* Re-sample imbalanced partitions with the desired sampling probability. */
           val imbalanced = new PartitionPruningRDD(rdd.map(_._1), imbalancedPartitions.contains)
           val seed = byteswap32(-rdd.id - 1)
-          //TODO
           val reSampled = imbalanced.sample(withReplacement = false, fraction, seed).collect()
           val weight = (1.0 / fraction).toFloat
           candidates ++= reSampled.map(x => (x, weight))
@@ -145,7 +156,7 @@ object SubtreePartitionerFunctions {
    *
    * @param rdd the input RDD to sketch
    * @param sampleSizePerPartition max sample size per partition
-   * @return (total number of items, an array of (partitionId, number of items, sample))
+   * @return the tuple (total number of items, an array of (partitionId, number of items, sample))
    */
   def sketch(
       rdd: RDD[NodeLabel],
@@ -167,7 +178,7 @@ object SubtreePartitionerFunctions {
   * @param sampleSize - The sample size
   * @param seed - The seed 
   * @return an iterator containing the generated sample and the length of the input
-  * */
+  */
   def reservoirSamplingLAndCount(iter : Iterator[NodeLabel], sampleSize : Int, seed : Long = Random.nextLong()) : (Array[NodeLabel], Long) = {
     val random = new Random(seed)
     var sample : Array[NodeLabel] = new Array(sampleSize)
@@ -207,10 +218,11 @@ object SubtreePartitionerFunctions {
    * maximalSubtreesDecreaseDepth - Decreases the subtrees' depths' as much as possible without having them
    *                                intersect each other.
    * @param subtrees - The vector of maximal non-intersecting subtrees
+   * @return Array filled with subtrees of minimzed depth without having any intersections.
    *
-   * @assumptions: Assumes the maximal subtrees to be ordered from left to right.
+   * @assumptions: Assumes the input array of maximal subtrees to be ordered from left to right.
    */
-  def maximalSubtreesDecreaseDepth[A : ClassTag](maxSubtrees : Array[(NodeLabel, A)], depthLimit : Depth = 0) : Array[(NodeLabel,A)] = {
+  def maximalSubtreesDecreaseDepth[A : ClassTag](maxSubtrees : Array[(NodeLabel, A)], depthLimit : Depth = 0) : Array[(NodeLabel, A)] = {
     val maxLen = maxSubtrees.length
     require(maxLen > 0)
 
@@ -270,12 +282,11 @@ object SubtreePartitionerFunctions {
     Subset(low, high).normalise
   }
 
-
   /**
-   * TODO: REWRTIE (LIKE COUNT IN MERGE)
    * maximalWeightSubtreeGeneration - Find the set of largest non-intersecting subtrees of the tree
    * @param leaves The tree of sorted leaves (leftRightOrd) determining the tree, each leaf containing a weight which corresponds to how many elements in the data it represents
    * @param weightLimit maximal weight of subtrees 
+   * @return Array of the set of largest non-intersecting subtrees and their weights
    */
   def maximalWeightSubtreeGeneration(leaves : Vector[(NodeLabel, Float)], weightLimit: Float) : Array[(NodeLabel, Float)] = {
     var maxSubtrees : List[(NodeLabel, Float)] = List.empty
@@ -336,6 +347,7 @@ object SubtreePartitionerFunctions {
    *                                 integer is the partition with the smallest total count.
    * @param numPartitions - The number of partitions to distribute subtrees over
    * @param subtrees - The maximal leftRightOrdered subtrees to distribute
+   * @returns A HashMap mapping NodeLabels of subtrees to partitions
    */
   def distributeSubtreesToPartitions(numPartitions : Int, subtrees: Array[(NodeLabel, Float)]) : HashMap[NodeLabel, Int] = {
 
@@ -371,7 +383,9 @@ object SubtreePartitionerFunctions {
    * findSubtree - Find the leaf's subtree within the maximalSubtree Array, if one exists, otherwise, return
    *               the closest subtree found.
    * @param leaf - The leaf node 
-   * @param subtree - The subtree vector to search within
+   * @param subtree - The subtree Array to search within
+   * @return the given leaf's subtree within the maximalSubtree Array, if one exists, otherwise, return
+   *               the closest subtree found.
    */
   def findSubtree(leaf : NodeLabel, subtrees : Array[(NodeLabel, Float)]) : NodeLabel = {
     var low = 0
@@ -413,6 +427,14 @@ object SubtreePartitionerFunctions {
     closestSubtree
   }
 
+  /**
+   * findSubtree - Find the leaf's subtree within the maximalSubtree Array, if one exists, otherwise, return
+   *               the closest subtree found.
+   * @param leaf - The leaf node 
+   * @param subtree - The subtree vector to search within
+   * @return the given leaf's subtree within the maximalSubtree Array, if one exists, otherwise, return
+   *               the closest subtree found.
+   */
   def findSubtree(leaf : NodeLabel, subtrees : Vector[NodeLabel]) : NodeLabel = {
     var low = 0
     var high = subtrees.length-1
