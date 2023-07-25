@@ -66,6 +66,11 @@ abstract class SpatialTree extends Serializable {
   def descendBox(point : MLVector) : Stream[NodeLabel] = descendBoxPrime(point).map(_._1)
 }
 
+/**
+ * WidestSplitTree - Case Class representing a root Regular Paving, the Regular Paving whose box is the given root box.
+ * 		     The class implements methods surrounding the splitting of Regular Pavings and utility functions for
+ * 		     spatial information about cells such as volumes and split orders.
+ */
 case class WidestSplitTree(rootCellM : Rectangle) extends SpatialTree {
   override def rootCell = rootCellM
 
@@ -126,8 +131,17 @@ case class WidestSplitTree(rootCellM : Rectangle) extends SpatialTree {
   }
 
   /**
-   * quickDescendBox - Quick splitting of single points down to given depth. Reuses arrays and uses
+   * quickDescendBox - Quick splitting of a single point down to given depth. Reuses arrays and uses
    *  bit operations directly on bitstring to avoid unecessary allocations.
+   *
+   * @param bits - Reusable buffer for NodeLabel Bits
+   * @param numBits - total number of bits in the bits Byte Array
+   * @param low - Reusable buffer for the low values of the point's cell's rectangle
+   * @param high - Reusable buffer for the high values of the point's cell's rectangle
+   * @param splitOrder - Array containing the order of dimensions to split up to the given depth
+   * @param point - The point to keep track of
+   * @param depth - The depth to split down to
+   * @return The cell at the given depth in which the given point resides in.
    */
   def quickDescendBox(bits : Array[Byte], numBits : Depth, low : Array[Double], high : Array[Double], splitOrder : Array[Int],  point : MLVector, numDims : Int, depth : Depth) : NodeLabel = {
 
@@ -163,6 +177,10 @@ case class WidestSplitTree(rootCellM : Rectangle) extends SpatialTree {
 
   /**
    * quickDescend - Quick splitting of points down to given depth
+   *
+   * @param points - Iterator over set of point to split
+   * @param depth - The depth to split down to
+   * @return Iterator over every point's cell's NodeLabel at the given depth
    */
   def quickDescend(points : Iterator[MLVector], depth : Depth) : Iterator[NodeLabel] = {
 
