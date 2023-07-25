@@ -61,6 +61,9 @@ object MergeEstimatorFunctions {
     labeledDS.groupByKey(_._1).count
   }
 
+  /**
+   * TODO
+   */
   def quickToLabeled(tree: WidestSplitTree, depth: Int, points: RDD[MLVector]): RDD[(NodeLabel, Count)] = {
     val spark = getSpark
     import spark.implicits._
@@ -213,7 +216,7 @@ object MergeEstimatorFunctions {
   }
 
   /**
-   *
+   * TODO
    */
   def mergeLeavesRDD(countedRDD: RDD[(NodeLabel, Count)], countLimit: Count, depthLimit : Depth, verbose: Boolean = false): Array[(NodeLabel, Count)] = {
     val spark = getSpark
@@ -242,5 +245,13 @@ object MergeEstimatorFunctions {
     }
 
     subtreesMerged
+  }
+
+  /**
+   * TODO 
+   */
+  def mergeLeavesHistogram(tree : SpatialTree, countedRDD: RDD[(NodeLabel, Count)], countLimit: Count, depthLimit : Depth, verbose: Boolean = false): Histogram = {
+    val merged = mergeLeavesRDD(countedRDD, countLimit, depthLimit, verbose)
+    Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap))
   }
 }

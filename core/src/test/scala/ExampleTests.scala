@@ -1,14 +1,5 @@
 import scala.language.postfixOps
 
-import co.wiklund.disthist._
-import SpatialTreeFunctions._
-import RectangleFunctions._
-import MergeEstimatorFunctions._
-import HistogramFunctions._
-import LeafMapFunctions._
-import MDEFunctions._
-import GslRngFunctions._
-import Types._
 
 import org.apache.spark._
 import org.apache.log4j.{ Logger, Level }
@@ -27,6 +18,9 @@ import scala.collection.mutable.HashMap._
 
 import co.wiklund.disthist._
 import co.wiklund.disthist.Types._
+import co.wiklund.disthist.RectangleFunctions._
+import co.wiklund.disthist.MDEFunctions._
+import co.wiklund.disthist.GslRngFunctions._
 import co.wiklund.disthist.LeafMapFunctions._
 import co.wiklund.disthist.SpatialTreeFunctions._
 import co.wiklund.disthist.HistogramFunctions._
@@ -407,50 +401,105 @@ class NormalExamples extends FlatSpec with Matchers with BeforeAndAfterAll {
   "Normal Regression Analysis" should "work" in {
     val spark = getSpark
     import spark.implicits._
+
+    /**
+     * TODO: What is this estimator, link papers, explain basic ideas, data structures.
+     * - Quick description of regular paving, (details: [Mapped Regular Pavings]
+     * - [Insert Latex Picture]
+     * - Histogram estimator main idea. 
+     */
  
+    /**
+     * TODO: Why use estimator (What is its strenghts)
+     * - Works in L_1, easily understandable evaluation of performance
+     * - Works for any continuous X in L_1, with universal performance guarantees.
+     * - Works for any dimension
+     * - Made to be scalable, constructed for distributed data sets.
+     * - The Strict arithmetic whis emerges from Regular Paving splitting rules allow us to easily construct
+     *   useful tools: We can condition on arbitrary points in arbitrary dimensions. From that we can easily retrieve
+     *   confidence intervals.
+     */
+
+    /**
+     * TODO: Weaknesses 
+     * - Hard to use. (Several parameters which we can adjust to our need, requires attention / responsible use by user.
+     * - [Technical] Somewhat error-prone (We can mitigate this!)
+     * - constructed in 4 stages, 3 of which the user has to get their hands dirty in.
+     */
+
+    /**
+     * Setup of problem data. We consider here data from a 5-dimensional standard Gaussian. We will train the estimator
+     * using a training size of 10^7, a validation size of (1/2) * 10^7, and a test size of 1000 to evaluate the performance
+     * of our estimator. The number of partitions is an important parameter which should not necessarily be set to the number of
+     * available cores over all machines, we shall get into this later.
+     */
     val dimensions = 5
-    val sizeExp = 6
+    val sizeExp = 7
     val numPartitions = 64
     spark.conf.set("spark.default.parallelism", numPartitions.toString)
-    
     val trainSize = math.pow(10, sizeExp).toLong
-    val finestResSideLength = 1e-5 
+
   
+    /**
+     * We now generate all the data.
+     */
     val trainingRDD = normalVectorRDD(spark.sparkContext, trainSize, dimensions, numPartitions, 1230568)
     val validationRDD =  normalVectorRDD(spark.sparkContext, trainSize/2, dimensions, numPartitions, 5465694)
     val testRDD =  normalVectorRDD(spark.sparkContext, 1000, dimensions, numPartitions, 6949239)
 
   
+    /**
+     * Stage 1: TODO
+     */
+
     /* Get boxhull of training data and test data */
     var rectTrain = RectangleFunctions.boundingBox(trainingRDD)
     var rectValidation = RectangleFunctions.boundingBox(validationRDD)
     val rootBox = RectangleFunctions.hull(rectTrain, rectValidation)
   
+    /**
+     * finestResSideLength: TODO
+     */
+    val finestResSideLength = 1e-5 
     val tree = widestSideTreeRootedAt(rootBox)
     val finestResDepth = tree.descendBoxPrime(Vectors.dense(rootBox.low.toArray)).dropWhile(_._2.widths.max > finestResSideLength).head._1.depth
-    val stepSize = math.ceil(finestResDepth / 8.0).toInt
-    val kInMDE = 10
   
     /**
-     * Label each datapoint by the label of the box at depth (finestResDepth) which it resides in, and count number of datapoints
-     * found in occupied boxes.
+     * TODO: Stage 2: Labeling of data at finestResDepth
      */
     var countedTrain = quickToLabeled(tree, finestResDepth, trainingRDD)
     var countedValidation = quickToLabeled(tree, finestResDepth, validationRDD)
         
+    /**
+     * TODO: Stage 3: Sort data according to subtrees they are found in, merge them up to count limit
+     */
     val sampleSizeHint = 1000
     val partitioner = new SubtreePartitioner(numPartitions, countedTrain, sampleSizeHint)
     val depthLimit = partitioner.maxSubtreeDepth
     val countLimit = 400 
     val subtreeRDD = countedTrain.repartitionAndSortWithinPartitions(partitioner)
     val merged = mergeLeavesRDD(subtreeRDD, countLimit, depthLimit)
-  
+
+    /**
+     * TODO: Stage 4: Finding a ~MDE between our count limit and the rootBox density
+     */
+    val kInMDE = 10
     val density = toDensityHistogram(getMDE(
       Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap)), 
       countedValidation, 
       kInMDE, 
-      false 
+      true 
     ))
+
+    /**
+     * TODO: we finally have our non-normalized density.
+     *  (1) Normalize
+     *  (2) Go through the density's data structures
+     *  (3) Visualize
+     *  (4) Write up save/get functions 
+     */
+
+/********************** Notebook 2 *********************/
 
     /* Allocate Gnu Scientific Library RNG using given seed */
     val rngHandle = new GslRngHandle(1235)
@@ -473,37 +522,6 @@ class NormalExamples extends FlatSpec with Matchers with BeforeAndAfterAll {
       var sliceLeavesBuf : Array[NodeLabel] = new Array(density.densityMap.truncation.leaves.length)
       var sliceValuesBuf : Array[(Probability,Volume)] = new Array(density.densityMap.truncation.leaves.length)
       var conditional = quickSlice(density, sliceAxes, slicePoint, splitOrder)
-
-      /* Conditional Density */
-      //val conditionalOld = slice(density, sliceAxes, slicePoint).normalize
-      //val leaves1 = conditional.densityMap.truncation.leaves
-      //val leaves2 = conditionalOld.densityMap.truncation.leaves
-      //val vals1 = conditional.densityMap.vals
-      //val vals2 = conditionalOld.densityMap.vals
-
-      //println("LENGTHS: " + leaves1.length + ", " + leaves2.length)
-      //var prob1 : Double = 0
-      //var prob2 : Double = 0
-      //for (j <- 0 until leaves1.length) {
-      //  println("leaves: " + leaves1(j) + ", " + leaves2(j))
-      //  println("values: " + vals1(j) + ", " + vals2(j))
-      //  prob1 += vals1(j)._1 * vals1(j)._2
-      //  prob2 += vals2(j)._1 * vals2(j)._2
-      //  assert(leaves1(j) == leaves2(j))
-      //}
-      //assert(leaves1.length == leaves2.length)
-
-      //for (j <- 1 to 100) {
-      //  println("Slice: " + j)
-      //  val cawd = slice(density, sliceAxes, slicePoints)
-      //}
-
-      //for (j <- 0 until testData.length) {
-      //  println("Quick slice " + j)
-      //  val cawd = quickSlice(density, sliceAxes, testData(j).toArray.toVector.drop(1), splitOrder, sliceLeavesBuf, sliceValuesBuf)
-      //}
-      //
-      
 
       if (conditional != null) {
         conditional = conditional.normalize
