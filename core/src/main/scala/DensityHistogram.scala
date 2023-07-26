@@ -40,7 +40,7 @@ import org.apache.spark.mllib.linalg.Vectors
  * @param tree
  * @param densityMap
  */
-case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability, Volume)]) {
+case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Double, Volume)]) {
 
   /**
    * density - Determine the value of the density function at point v.
