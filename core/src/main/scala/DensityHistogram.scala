@@ -29,9 +29,25 @@ import HistogramFunctions._
 import org.apache.spark.mllib.linalg.Vectors
 
 /**
- * NOTE: Probability == Density! 
+ * DensityHistogram - Histogram density class. The class keeps track of the underlying spatial partitioning and
+ *                    contains a LeafMap mapping NodeLabels of leaves to a (densityValue, volume) tuple. The
+ *                    densityValue is simply the value of the density takes on the whole space defined by a
+ *                    leaf's cell.
+ *
+ *                    NOTE: The DensityHistogram is not necessarily a density, and the user must call .normalize
+ *                    to generate a density which integrates to 1.
+ *
+ * @param tree
+ * @param densityMap
  */
 case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability, Volume)]) {
+
+  /**
+   * density - Determine the value of the density function at point v.
+   *
+   * @param v - The point at which we wish to determine the density
+   * @return The density at v.
+   */
   def density(v: MLVector): Probability = {
     val point = v.toArray
     for (i <- 0 until point.length) {
@@ -43,6 +59,15 @@ case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability,
     densityMap.query(tree.descendBox(v))._2.getOrElse((0.0, 0.0))._1
   }
 
+  /**
+   * normalize - Construct a normalized density out of the DensityHistogram. 
+   *
+   * WARNING: The function is usually applied together with a slice operation to determine the conditional density.
+   * Make sure that the slice is defined; In the case that the slice only slice 0-probability regions, this is
+   * ill-defined, so check any returned quickSlice value if it equals null.
+   *
+   * @return The normalized density.
+   */
   def normalize: DensityHistogram = {
     val integral = densityMap.vals.map{ case (dens, vol) => 
       dens * vol
@@ -104,6 +129,13 @@ case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Probability,
 }
 
 object HistogramFunctions {
+
+  /**
+   * toDensityHistogram - Generate a DensityHistogram from a Histogram
+   *
+   * @param hist - The Histogram to convert
+   * @return The converted DensityHistogram
+   */
   def toDensityHistogram(hist: Histogram): DensityHistogram = {
     val counts = hist.counts
     val tree = hist.tree
