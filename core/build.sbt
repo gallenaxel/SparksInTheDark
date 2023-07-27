@@ -17,6 +17,7 @@ test / parallelExecution := false
 
 libraryDependencies += "org.apache.spark" %% "spark-sql" % "3.1.2" // % "provided"
 libraryDependencies += "org.apache.spark" %% "spark-mllib" % "3.1.2" // % "provided"
+libraryDependencies += "org.apache.commons" % "commons-rng-simple" % "1.5" // % "provided"
 // libraryDependencies += "org.vegas-viz" %% "vegas" % "0.3.11"
 // libraryDependencies += "org.scalaz" %% "scalaz-core" % "7.2.16"
 

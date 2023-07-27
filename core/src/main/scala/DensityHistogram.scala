@@ -37,15 +37,15 @@ import org.apache.spark.mllib.linalg.Vectors
  *                    NOTE: The DensityHistogram is not necessarily a density, and the user must call .normalize
  *                    to generate a density which integrates to 1.
  *
- * @param tree
- * @param densityMap
+ * @param tree - The DensityHistogram's root box
+ * @param densityMap - Map from leaves to leaf count and leaf volume.
  */
 case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Double, Volume)]) {
 
   /**
    * density - Determine the value of the density function at point v.
    *
-   * @param v - The point at which we wish to determine the density
+   * @param v - The point at which we wish to determine the density.
    * @return The density at v.
    */
   def density(v: MLVector): Probability = {

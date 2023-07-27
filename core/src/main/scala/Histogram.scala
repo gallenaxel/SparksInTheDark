@@ -83,19 +83,20 @@ case class TailProbabilities(tree : SpatialTree, tails : LeafMap[Probability]) e
 }
 
 /**
- * Histogram - TODO
+ * Histogram - Histogram class. The class keeps track of the underlying spatial partitioning and
+ *             contains a LeafMap mapping NodeLabels of leaves their individual counts. 
  *
- * @param tree - TODO
- * @param totalCount - TODO
- * @param counts - TODO
+ * @param tree - The Histogram's root box 
+ * @param totalCount - The total count of all leaf counts 
+ * @param counts - A leaf to count map
  */
 case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Count]) extends Serializable {
   
   /**
-   * density - TODO
+   * density - Determine the value of the density function at point v.
    *
-   * @param v - TODO
-   * @return TODO
+   * @param v - The point at which we wish to determine the density.
+   * @return The density at v.
    */
   def density(v : MLVector) : Double = {
     val point = v.toArray
