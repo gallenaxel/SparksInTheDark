@@ -90,7 +90,7 @@ case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Double, Volu
       case (lab, densVol) => (lab, densVol._1, densVol._1 * densVol._2)
     }.toVector.sortBy {
       case (lab, dens, prob) => dens
-    }.toIterable.scanLeft((rootLabel, 0.0)) {
+    }.reverse.toIterable.scanLeft((rootLabel, 0.0)) {
       case ((_, probSum), (lab, _, prob)) => (lab, probSum + prob)
     }.tail.toMap
 

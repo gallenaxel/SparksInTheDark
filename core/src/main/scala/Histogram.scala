@@ -87,7 +87,7 @@ case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Co
       case (lab, c) => (lab, c/(totalCount * tree.volumeAt(lab)), c)
     }.toVector.sortBy {
       case (lab, d, p) => d
-    }.toIterable.scanLeft((rootLabel, 0L)) {
+    }.reverse.toIterable.scanLeft((rootLabel, 0L)) {
       case ((_, c1), (lab, _, c2)) => (lab, c2 + c1)
     }.tail.map {
       case (lab, c) => (lab, c/(1.0*totalCount))

@@ -402,43 +402,11 @@ class NormalExamples extends FlatSpec with Matchers with BeforeAndAfterAll {
     val spark = getSpark
     import spark.implicits._
 
-    /**
-     * TODO: What is this estimator, link papers, explain basic ideas, data structures.
-     * - Quick description of regular paving, (details: [Mapped Regular Pavings]
-     * - [Insert Latex Picture]
-     * - Histogram estimator main idea. 
-     */
- 
-    /**
-     * TODO: Why use estimator (What is its strenghts)
-     * - Works in L_1, easily understandable evaluation of performance
-     * - Works for any continuous X in L_1, with universal performance guarantees.
-     * - Works for any dimension
-     * - Made to be scalable, constructed for distributed data sets.
-     * - The Strict arithmetic whis emerges from Regular Paving splitting rules allow us to easily construct
-     *   useful tools: We can condition on arbitrary points in arbitrary dimensions. From that we can easily retrieve
-     *   confidence intervals.
-     */
-
-    /**
-     * TODO: Weaknesses 
-     * - Hard to use. (Several parameters which we can adjust to our need, requires attention / responsible use by user.
-     * - [Technical] Somewhat error-prone (We can mitigate this!)
-     * - constructed in 4 stages, 3 of which the user has to get their hands dirty in.
-     */
-
-    /**
-     * Setup of problem data. We consider here data from a 5-dimensional standard Gaussian. We will train the estimator
-     * using a training size of 10^7, a validation size of (1/2) * 10^7, and a test size of 1000 to evaluate the performance
-     * of our estimator. The number of partitions is an important parameter which should not necessarily be set to the number of
-     * available cores over all machines, we shall get into this later.
-     */
     val dimensions = 5
     val sizeExp = 7
     val numPartitions = 64
     spark.conf.set("spark.default.parallelism", numPartitions.toString)
     val trainSize = math.pow(10, sizeExp).toLong
-
   
     /**
      * We now generate all the data.
@@ -468,7 +436,7 @@ class NormalExamples extends FlatSpec with Matchers with BeforeAndAfterAll {
      * TODO: Stage 2: Labeling of data at finestResDepth
      */
     var countedTrain = quickToLabeled(tree, finestResDepth, trainingRDD)
-    var countedValidation = quickToLabeled(tree, finestResDepth, validationRDD)
+    var countedValidation = quickToLabeled(tree, finestResDepth, validationRDD).cache
         
     /**
      * TODO: Stage 3: Sort data according to subtrees they are found in, merge them up to count limit
@@ -490,6 +458,7 @@ class NormalExamples extends FlatSpec with Matchers with BeforeAndAfterAll {
       kInMDE, 
       true 
     ))
+    countedValidation.unpersist()
 
     /**
      * TODO: we finally have our non-normalized density.

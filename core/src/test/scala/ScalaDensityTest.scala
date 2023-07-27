@@ -267,89 +267,6 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     assert(values4(1) == (0.5, 1))
   }
   
-  "tailProbabilities" should "produce increasingly larger coverage regions" in {
-    val spark = getSpark
-    import spark.implicits._
-    implicit val ordering : Ordering[NodeLabel] = leftRightOrd
-   
-    val dimensions = 3
-    val sizeExp = 5
-
-    val numPartitions = 16
-    
-    val trainSize = math.pow(10, sizeExp).toLong
-    val finestResSideLength = 1e-1
-
-    val rawTrainRDD = normalVectorRDD(spark.sparkContext, trainSize, dimensions, numPartitions, 1234567)
-    val rawTestRDD =  normalVectorRDD(spark.sparkContext, trainSize/2, dimensions, numPartitions, 7654321)
-
-    var rectTrain = RectangleFunctions.boundingBox(rawTrainRDD)
-    var rectTest = RectangleFunctions.boundingBox(rawTestRDD)
-    //val rootBox = RectangleFunctions.hull(rectTrain, rectTest)
-    val rootBox = Rectangle(Vector(-80.0, -80.0, -80.0), Vector(80,80,80))
-
-    val tree = widestSideTreeRootedAt(rootBox)
-    val finestResDepth = tree.descendBoxPrime(Vectors.dense(rootBox.low.toArray)).dropWhile(_._2.widths.max > finestResSideLength).head._1.depth
-    val stepSize = 1500 
-    val kInMDE = 10
-
-    var countedTrain = quickToLabeled(tree, finestResDepth, rawTrainRDD)
-    var countedTest = quickToLabeled(tree, finestResDepth, rawTestRDD)
-        
-    val partitioner = new SubtreePartitioner(2, countedTrain, 20) /* action 1 (collect) */
-    val depthLimit = partitioner.maxSubtreeDepth
-    val countLimit = 30
-    val subtreeRDD = countedTrain.repartitionAndSortWithinPartitions(partitioner)
-    val merged = mergeLeavesRDD(subtreeRDD, countLimit, depthLimit, true)
-
-    val hist = Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap))
-    var stopSize = Option.empty[Int]
-    
-    density = toDensityHistogram(getMDE(
-      hist,
-      countedTest, 
-      kInMDE, 
-      true 
-    )).normalize
-
-    val coverageRegions = density.tailProbabilities.tails.toMap
-    val sorted = coverageRegions.iterator.toArray.sortBy(_._2)
-    val vals = sorted.map(kv => kv._2)
-    val keys = sorted.map(_._1)
-    var sum = 0.0
-    for (i <- 0 until vals.length) {
-
-      assert(vals(i) == coverageRegions(keys(i)))
-      assert(sum < coverageRegions(keys(i)))
-      val densityMap = density.densityMap.toMap
-      val p1 = coverageRegions(keys(i)) - sum
-      val p2 = densityMap.get(keys(i)) match {
-        case None => 10.0 
-        case Some(probVol) => probVol._1 * probVol._2
-      }
-      val diff = p1 - p2
-
-      assert(-1e-10 < diff && diff < 1e-10)
-
-      val box = density.tree.cellAt(keys(i))
-      val middle = Vectors.dense(box.centre(0), box.centre(1), box.centre(2))
-      assert(density.tailProbabilities.query(middle) == coverageRegions(keys(i)))
-
-      sum = coverageRegions(keys(i))
-    }
-
-    val outsidePoint = Vectors.dense(100.0, 100.0, 100.0)
-    assert(density.tailProbabilities.query(outsidePoint) == 1.0)
-
-    var nullSetLeaf : NodeLabel = NodeLabel(64) /* (-80.0, -40.0) x (-80.0, -40.0) x (-80.0, -40.0) */
-    
-
-    val nullSetBox = density.tree.cellAt(nullSetLeaf) 
-    assert(coverageRegions.get(nullSetLeaf) == None)
-    val mid = Vectors.dense(nullSetBox.centre(0), nullSetBox.centre(1), nullSetBox.centre(2))
-    val va = density.tailProbabilities.query(mid)
-    assert(va == 1.0)
-  }
   "sample" should "produce samples from non-zero propability regions" in {
 
     val handle = new GslRngHandle(4367)
@@ -1081,13 +998,127 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
 
   it should "have tail 0/1 in minimum/maximum density cell" in {
     val tp   = h.tailProbabilities()
-    val imax = tp.tails.vals.zipWithIndex.maxBy(_._1)._2
-    val imin = tp.tails.vals.zipWithIndex.minBy(_._1)._2
+    val imin = tp.tails.vals.zipWithIndex.maxBy(_._1)._2
+    val imax = tp.tails.vals.zipWithIndex.minBy(_._1)._2
     val cmax = h.counts.vals(imax)
     val cmin = h.counts.vals(imin)
     assert(cmax === h.counts.vals.max)
     assert(cmin === h.counts.vals.min)
   }
+
+  it should "produce increasingly larger coverage regions" in {
+    val spark = getSpark
+    import spark.implicits._
+    implicit val ordering : Ordering[NodeLabel] = leftRightOrd
+   
+    val dimensions = 3
+    val sizeExp = 5
+
+    val numPartitions = 16
+    
+    val trainSize = math.pow(10, sizeExp).toLong
+    val finestResSideLength = 1e-1
+
+    val rawTrainRDD = normalVectorRDD(spark.sparkContext, trainSize, dimensions, numPartitions, 1234567)
+    val rawTestRDD =  normalVectorRDD(spark.sparkContext, trainSize/2, dimensions, numPartitions, 7654321)
+
+    var rectTrain = RectangleFunctions.boundingBox(rawTrainRDD)
+    var rectTest = RectangleFunctions.boundingBox(rawTestRDD)
+    //val rootBox = RectangleFunctions.hull(rectTrain, rectTest)
+    val rootBox = Rectangle(Vector(-80.0, -80.0, -80.0), Vector(80,80,80))
+
+    val tree = widestSideTreeRootedAt(rootBox)
+    val finestResDepth = tree.descendBoxPrime(Vectors.dense(rootBox.low.toArray)).dropWhile(_._2.widths.max > finestResSideLength).head._1.depth
+    val stepSize = 1500 
+    val kInMDE = 10
+
+    var countedTrain = quickToLabeled(tree, finestResDepth, rawTrainRDD)
+    var countedTest = quickToLabeled(tree, finestResDepth, rawTestRDD)
+        
+    val partitioner = new SubtreePartitioner(2, countedTrain, 20) /* action 1 (collect) */
+    val depthLimit = partitioner.maxSubtreeDepth
+    val countLimit = 30
+    val subtreeRDD = countedTrain.repartitionAndSortWithinPartitions(partitioner)
+    val merged = mergeLeavesRDD(subtreeRDD, countLimit, depthLimit, true)
+
+    val hist = Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap))
+    var stopSize = Option.empty[Int]
+    
+    density = toDensityHistogram(getMDE(
+      hist,
+      countedTest, 
+      kInMDE, 
+      true 
+    )).normalize
+
+    val coverageRegions = density.tailProbabilities.tails.toMap
+    val sorted = coverageRegions.iterator.toArray.sortBy(_._2)
+    val vals = sorted.map(kv => kv._2)
+    val keys = sorted.map(_._1)
+    var sum = 0.0
+    for (i <- 0 until vals.length) {
+
+      assert(vals(i) == coverageRegions(keys(i)))
+      assert(sum < coverageRegions(keys(i)))
+      val densityMap = density.densityMap.toMap
+      val p1 = coverageRegions(keys(i)) - sum
+      val p2 = densityMap.get(keys(i)) match {
+        case None => 10.0 
+        case Some(probVol) => probVol._1 * probVol._2
+      }
+      val diff = p1 - p2
+
+      assert(-1e-10 < diff && diff < 1e-10)
+
+      val box = density.tree.cellAt(keys(i))
+      val middle = Vectors.dense(box.centre(0), box.centre(1), box.centre(2))
+      assert(density.tailProbabilities.query(middle) == coverageRegions(keys(i)))
+
+      sum = coverageRegions(keys(i))
+    }
+
+    val outsidePoint = Vectors.dense(100.0, 100.0, 100.0)
+    assert(density.tailProbabilities.query(outsidePoint) == 1.0)
+
+    var nullSetLeaf : NodeLabel = NodeLabel(64) /* (-80.0, -40.0) x (-80.0, -40.0) x (-80.0, -40.0) */
+    
+
+    val nullSetBox = density.tree.cellAt(nullSetLeaf) 
+    assert(coverageRegions.get(nullSetLeaf) == None)
+    val mid = Vectors.dense(nullSetBox.centre(0), nullSetBox.centre(1), nullSetBox.centre(2))
+    val va = density.tailProbabilities.query(mid)
+    assert(va == 1.0)
+  }
+  
+  it should "Add largest density value regions first" in {
+    val leaves = Truncation(Vector(NodeLabel(4), NodeLabel(5), NodeLabel(6), NodeLabel(7)))
+    val densityMap = LeafMap(leaves, Vector((0.5, 1.0),(0.25, 1.0),(0.15, 1.0),(0.1, 1.0)))
+    val tree = WidestSplitTree(Rectangle(Vector(-2.0), Vector(2.0)))
+    val dens = DensityHistogram(tree, densityMap)
+    val coverageRegions = dens.tailProbabilities.tails.toMap
+
+    var leaf = 4
+    var box = dens.tree.cellAt(NodeLabel(leaf))
+    var middle = Vectors.dense(box.centre(0))
+    assert(dens.tailProbabilities.query(middle) == 0.5)
+
+    leaf = 5 
+    box = dens.tree.cellAt(NodeLabel(leaf))
+    middle = Vectors.dense(box.centre(0))
+    assert(dens.tailProbabilities.query(middle) == 0.75)
+
+    leaf = 6 
+    box = dens.tree.cellAt(NodeLabel(leaf))
+    middle = Vectors.dense(box.centre(0))
+    assert(dens.tailProbabilities.query(middle) == 0.90)
+
+    leaf = 7 
+    box = dens.tree.cellAt(NodeLabel(leaf))
+    middle = Vectors.dense(box.centre(0))
+    assert(dens.tailProbabilities.query(middle) == 1.0)
+  }
+
+
 
   "fringes" should "have inverse concatLeafmap" in {
     val parentTrunc = h.counts.truncation match {
