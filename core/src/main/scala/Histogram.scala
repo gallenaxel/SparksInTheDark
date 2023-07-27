@@ -49,9 +49,25 @@ object HistogramUtilityFunctions {
 
 import HistogramUtilityFunctions._
 
+/**
+ * TailProbabilities - Coverage region state and functionality class. TailProbabilities map leaves
+ *                     to the smallest coverage region which contain the given leaf. The coverage
+ *                     regions under consideration are successively larger regions that contain any
+ *                     previous region of smaller probability. At each new region (N), the leaf (L) with the
+ *                     largest density value outside the previous region (P) is chosen: N = P union {L}.
+ *
+ * @param tree - The root box of the density estimate from which we want coverage regions.
+ * @param tails - mapping of leafs L to the probability of the smallest coverage region containing L
+ */
 case class TailProbabilities(tree : SpatialTree, tails : LeafMap[Probability]) extends Serializable {
-  def query(v : MLVector) : Double = {
 
+  /**
+   * query - Query the probability of the smallest coverage region containing the given point
+   *
+   * @param v - The point to find a coverage region probability for
+   * @return The probability of the point's coverage region
+   */
+  def query(v : MLVector) : Double = {
     val point = v.toArray
     for (i <- 0 until point.length) {
       if (point(i) < tree.rootCell.low(i) || point(i) > tree.rootCell.high(i)) {
@@ -66,7 +82,21 @@ case class TailProbabilities(tree : SpatialTree, tails : LeafMap[Probability]) e
   }
 }
 
+/**
+ * Histogram - TODO
+ *
+ * @param tree - TODO
+ * @param totalCount - TODO
+ * @param counts - TODO
+ */
 case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Count]) extends Serializable {
+  
+  /**
+   * density - TODO
+   *
+   * @param v - TODO
+   * @return TODO
+   */
   def density(v : MLVector) : Double = {
     val point = v.toArray
     for (i <- 0 until point.length) {
@@ -82,6 +112,11 @@ case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Co
     }
   }
 
+  /**
+   * tailProbabilities - Find the coverage regions for the Histogram
+   *
+   * @return the TailProbabilities object corresponding to the Histogram's coverage regions.
+   */
   def tailProbabilities() : TailProbabilities = {
     val quantiles = counts.toIterable.map {
       case (lab, c) => (lab, c/(totalCount * tree.volumeAt(lab)), c)
@@ -115,8 +150,10 @@ case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Co
 
   /**
    * backtrackNumSteps - Manual constrution of coarser histogram according to splitting rule, no streams, no extra allocations, no intermediate histogram storage.
+   *
    * @param prio - Priority function used in splitting
    * @param numSteps - Number of splits to backtrack
+   * @return The Histogram achieved by backtracking the current Histogram by the given amount of steps. The backtracking is done according to the given priority function.
    */
   def backtrackNumSteps[H](prio : PriorityFunction[H], numSteps : Int)(implicit ord : Ordering[H]) : Histogram = {
     require(numSteps > 0)
@@ -214,8 +251,13 @@ case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Co
     Histogram(tree, totalCount, LeafMap(Truncation(finalLeaves.map(t => t._1)), finalVals.toVector))
   }
 
-  /* 
-   * Exactly the same as above, but need to save merging order for verification in testing
+  /**
+   * backtrackNumStepsVerification - Manual constrution of coarser histogram according to splitting rule, no streams, no extra allocations, no intermediate histogram storage. We save
+   *                     the steps in which merges happen in order to use the history of merges in tests and verifications.
+   *
+   * @param prio - Priority function used in splitting
+   * @param numSteps - Number of splits to backtrack
+   * @return The Histogram achieved by backtracking the current Histogram by the given amount of steps. The backtracking is done according to the given priority function.
    */
   def backtrackNumStepsVerification[H](prio : PriorityFunction[H], numSteps : Int)(implicit ord : Ordering[H]) : (Array[(H, NodeLabel)], Histogram) = {
       require(numSteps > 0)
