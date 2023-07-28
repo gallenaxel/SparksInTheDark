@@ -134,7 +134,7 @@ class ArithmeticTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     var countedTrain = quickToLabeled(tree, finestResDepth, rawTrainRDD)
         
     val countLimit = 10
-    val merged = mergeLeaves(tree, countedTrain.toDS, countLimit, stepSize, "../tmp", true).collect
+    val merged = mergeLeaves(tree, countedTrain.toDS, countLimit, stepSize, "throwaway/tmp", true).collect
 
     val finer = Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap))
     var coarser : Histogram = null 

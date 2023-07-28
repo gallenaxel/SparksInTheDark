@@ -22,6 +22,15 @@ import Types._
 
 // (The) infinite binary tree
 
+/**
+ * NodeLabel - Efficient unique encoding of leaves within binary tree. The label is a sequence if bits,
+ *             where a bit value of 1 means right turn, and a bit value of 0 means a turn to the left.
+ *             This is used as the library's of identifying leaves. Together with the root box in the form
+ *             of a WidestSplitTree Class, we can easily find the spatial box corresponding the the sequence
+ *             of splits, or turns, that the label encode. 
+ *
+ * @param lab - The Byte Array wrapper. There are no constraints on how large lab can be.
+ */
 case class NodeLabel(lab : BigInt) extends Serializable {
   private val rootLabel : BigInt = 1
 

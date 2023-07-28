@@ -37,6 +37,18 @@ object MDEFunctions {
     sparkOpt.get
   }
 
+  /**
+   * spacedBacktrack - Backtrack from finest histogram to evenly spaced coarser histograms which are to be considered in the iteration's MDE calculations. 
+   *
+   * @param hist - The finest histogram under consideration
+   * @param startIndex - The new finest histogram's index relative to hist
+   * @param stopIndex - The most coarsest histogram's index relative to hist under consideration
+   * @param stepSize - The number of splits between the generated histograms
+   * @param verbose - Verbose printing of the process
+   * @param prio - The priority function used in backtracking the histogram
+   *
+   * @return A set of evenly spaced histograms along the search path.
+   */
   def spacedBacktrack(
     hist: Histogram, 
     startIndex: Int, 
@@ -89,6 +101,9 @@ object MDEFunctions {
     mergedCRPs
   }
 
+  /**
+   * TODO: Memory issues on crpWithValMapBC
+   */
   def getDelta(crp: CollatedHistogram[String], validationHist: Histogram, verbose: Boolean = false): Vector[(String, Double)] = {
     // Spark must be running
     val spark = getSpark   
@@ -213,6 +228,17 @@ object MDEFunctions {
     (bestHistogram, largerThanBest)
   }
 
+  /**
+   * getMDE - Find the minimum distance estimate of an adaptive search within the path of increasingly more refined histograms, 
+   *          with hist being the most refined histogram. 
+   *
+   * @param hist - The most refined histogram on the search path
+   * @param validationData - The validation data to be used in finding a MDE in each search iteration.
+   * @param k - The number of histograms to consider every iteration
+   * @param verbose - Verbose printing of process
+   *
+   * @return The final non-normalized MDE from the whole adaptive search.
+   */
   def getMDE(
     hist: Histogram, 
     validationData: RDD[(NodeLabel, Count)], 

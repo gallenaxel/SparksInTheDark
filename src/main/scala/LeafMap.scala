@@ -23,8 +23,15 @@ import Types._
 import NodeLabelFunctions._
 import TruncationFunctions._
 
+/**
+ * LeafMap - Special map from histogram leaves to a set of values. A leaf's value, if it exist in the histogram,
+ *           can be queried by the query method. 
+ *
+ * truncation - the leaves that are mapped to some value
+ * vals - The set of values
+ */
 case class LeafMap[A:ClassTag](truncation : Truncation, vals : Vector[A]) extends Serializable {
-  // TODO: Optimise?
+
   def query(labs : Walk) : (NodeLabel, Option[A]) = {
     val (at, ss) = truncation.descendUntilLeafWhere(labs)
     if(ss.isEmpty) (at, None) else (at, Some(vals(ss.lower)))

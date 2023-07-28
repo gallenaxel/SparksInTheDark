@@ -61,6 +61,15 @@ object MergeEstimatorFunctions {
     labeledDS.groupByKey(_._1).count
   }
 
+  /**
+   * quickToLabeled - Quick labeling function of datapoints.
+   * 
+   * @param tree - Root Regular Paving 
+   * @param depth - The depth to split down to and determine the label
+   * @param points - The points to label and count
+   * @return A RDD containing cell NodeLabels for cells with non-zero counts. Every NodeLabel occurs only once
+   *         with the count set as the number of points found within the cell.
+   */
   def quickToLabeled(tree: WidestSplitTree, depth: Int, points: RDD[MLVector]): RDD[(NodeLabel, Count)] = {
     val spark = getSpark
     import spark.implicits._
@@ -145,6 +154,16 @@ object MergeEstimatorFunctions {
     Histogram(tree, leafMap.vals.sum, leafMap)
   }
 
+  /**
+   * subtreeAt - Find the lower (inclusive) and upper (exclusive) indices of the leaves in the subtree of the given node with
+   *             label at. 
+   *
+   * @param at - The Nodelabel of the subtree's root.
+   * @param leaves - The vector of sorted leaves
+   * @return Subset containing two integer indices lower (inclusive) and upper (exclusive). 
+   *
+   * @assumption The vector should be left-right ordered
+   */
  def subtreeAt(at : NodeLabel, leaves : Vector[(NodeLabel,Count)]) : Subset = {
     val within = Subset(0, leaves.length)
     val low =  binarySearchWithin((x : (NodeLabel, Count)) => !isStrictLeftOf(x._1, at))(leaves, within)
@@ -153,7 +172,20 @@ object MergeEstimatorFunctions {
   }
 
   /**
-   * @assumption leaves are leftRightOrdered
+   * maximalCountSubtreeGeneration - Generates the set of maximal subtrees, from left to right, with count not exceeding the count
+   *                                 limit or the given depth limit. This means that the subtrees cannot be decreased in depth 
+   *                                 without intersecting another subtree, or going below the depth limit, or exceeding the count limit. 
+   *                                 If the depth limit is reached within the function, the function reports back through an accumulator
+   *                                 that the limit was reached, and that the merging will not be able to finish fully within this worker's
+   *                                 function call.
+   *
+   * @param leavesIter - Leaves to generate subtrees from
+   * @param mergeShouldContinue - Accumulator to signal if more merging need to take place outside of function
+   * @param countLimit - the count limit to merge up to
+   * @param depthLimit - the depth limit every worker must adhere to
+   * @return Iterator over left-to-right ordered fully or partially merged leaves
+   *
+   * @assumption The input iterator of leaves is left-right ordered 
    */
   def maximalCountSubtreeGeneration(leavesIter : Iterator[(NodeLabel, Count)], mergeShouldContinue : LongAccumulator, countLimit : Count, depthLimit : Depth) : Iterator[(NodeLabel, Count)] = {
 
@@ -213,7 +245,17 @@ object MergeEstimatorFunctions {
   }
 
   /**
+   * mergeLeavesRDD - Merge the leaves or cells up to the count limit and return the RDD of the generated leaves.
    *
+   * @param tree - The root Regular Paving
+   * @param countedRDD - The set of cells with Labels and non-zero counts
+   * @param countLimit - The maximum count for any cell to have
+   * @param depthLimit - The depth limit is the depth for which it is safe for every worker to locally merge leaves up to.
+   *                     If further merging has to be done, the results are sent to the driver and finished locally.
+   * @param verbose - Verbose printing of how the operation is going
+   *
+   * @return The RDD in which every leaf contain a count not exceeding the given count limit but any more merging of leaves
+   *         make the new leaf exceed the count limit.
    */
   def mergeLeavesRDD(countedRDD: RDD[(NodeLabel, Count)], countLimit: Count, depthLimit : Depth, verbose: Boolean = false): Array[(NodeLabel, Count)] = {
     val spark = getSpark
@@ -242,5 +284,22 @@ object MergeEstimatorFunctions {
     }
 
     subtreesMerged
+  }
+
+  /**
+   * mergeLeavesHistogram - Merge the leaves or cells up to the count limit and return the Histogram.
+   *
+   * @param tree - The root Regular Paving
+   * @param countedRDD - The set of cells with Labels and non-zero counts
+   * @param countLimit - The maximum count for any cell to have
+   * @param depthLimit - The depth limit is the depth for which it is safe for every worker to locally merge leaves up to.
+   *                     If further merging has to be done, the results are sent to the driver and finished locally.
+   * @param verbose - Verbose printing of how the operation is going
+   *
+   * @return The coarsest histogram in which every leaf contain a count not exceeding the given count limit.
+   */
+  def mergeLeavesHistogram(tree : SpatialTree, countedRDD: RDD[(NodeLabel, Count)], countLimit: Count, depthLimit : Depth, verbose: Boolean = false): Histogram = {
+    val merged = mergeLeavesRDD(countedRDD, countLimit, depthLimit, verbose)
+    Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap))
   }
 }

@@ -19,6 +19,12 @@ The latest PRs in 2022 by Johannes Graner for his Masters thesis work build furt
   - to be turned into arXiv version and merged with the above arXiv version for peer-reviewed submission.
 - Notebook Examples: [https://github.com/lamastex/SparkDensityTree-examples](https://github.com/lamastex/SparkDensityTree-examples)
 
+The PR at 15th of June 2023 by Axel Sandstedt for his Masters thesis work involves algorithms for reducing communications between machines in networks and general optimizations:
+
+- **TODO**: link to thesis when uploaded
+
+PRs between 13th of July and 13th of September was supported by Combient Mix AB through 2023 summer internship in Data Engineering Sciences to Axel Sandstedt.
+
 ## Support
 
 - This work was initiated with support from project CORCON: Correctness by
