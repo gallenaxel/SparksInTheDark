@@ -18,7 +18,6 @@ import NodeLabelFunctions._
 import SubtreePartitionerFunctions._
 import HistogramFunctions._
 import MergeEstimatorFunctions._
-import GslRngFunctions._
 import org.apache.spark.mllib.linalg.{ Vector => MLVector }
 import SpatialTreeFunctions._
 import Types._
