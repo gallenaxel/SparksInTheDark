@@ -92,6 +92,10 @@ object BinarySearchFunctions {
 
 import BinarySearchFunctions._
 
+/**
+ * Truncation - A set of left-to-right ordered leaves which implcitly represents a binary tree. Only leaves have to be represented
+ *              within the tree. 
+ */
 case class Truncation(leaves : Vector[NodeLabel]) extends Serializable {
   // TODO: Make this a more efficent binary search
   def subtreeWithin(at : NodeLabel, within : Subset) : Subset = {
@@ -286,6 +290,19 @@ object TruncationFunctions {
 
   }
 
+  /**
+   * rpUnionNested - Quick implementation of older version rpUnionNestedPrime. Finds the union between the to set of leaves.
+   *                 The whole issue with unions in our sparse tree representation is that unions forces whole subtrees of
+   *                 to be leaves to be represented. Consider the following example: The coarser truncation contain a leaf
+   *                 which contain some (at least 1) of the finer truncation's leaves. The union will have to represent
+   *                 this subtree in a way such that every leaf (even ones not represented in the finer truncation) have
+   *                 to be represented. Thus the subtree of leaves generated will be the smallest set of leaves covering the
+   *                 whole "floor" of the subtree.
+   *
+   * @param finer - The finer truncation
+   * @param coarser - The coarser truncation.
+   * @return The union between finer and coarser.
+   */
   def rpUnionNested(finer: Truncation, coarser: Truncation): Truncation = {
    
     def fillLeft(root : NodeLabel, leaf : NodeLabel, union : Array[NodeLabel], index : Int) : (Array[NodeLabel], Int) = {
