@@ -1042,6 +1042,10 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val vals = sorted.map(kv => kv._2)
     val keys = sorted.map(_._1)
     var sum = 0.0
+    
+    val wantedConfidence = 0.95
+    var actualConfidence = 0.0
+
     for (i <- 0 until vals.length) {
 
       assert(vals(i) == coverageRegions(keys(i)))
@@ -1061,7 +1065,12 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
       assert(density.tailProbabilities.query(middle) == coverageRegions(keys(i)))
 
       sum = coverageRegions(keys(i))
+      if (wantedConfidence <= sum && actualConfidence == 0.0) {
+        actualConfidence = sum
+      }
     }
+
+    assert(density.tailProbabilities.confidenceRegion(wantedConfidence) == actualConfidence)
 
     val outsidePoint = Vectors.dense(100.0, 100.0, 100.0)
     assert(density.tailProbabilities.query(outsidePoint) == 1.0)
@@ -1102,6 +1111,15 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     box = dens.tree.cellAt(NodeLabel(leaf))
     middle = Vectors.dense(box.centre(0))
     assert(dens.tailProbabilities.query(middle) == 1.0)
+
+    assert(dens.tailProbabilities.confidenceRegion(0.0) == 0.5)
+    assert(dens.tailProbabilities.confidenceRegion(0.5) == 0.5)
+    assert(dens.tailProbabilities.confidenceRegion(0.74) == 0.75)
+    assert(dens.tailProbabilities.confidenceRegion(0.75) == 0.75)
+    assert(dens.tailProbabilities.confidenceRegion(0.89) == 0.90)
+    assert(dens.tailProbabilities.confidenceRegion(0.90) == 0.90)
+    assert(dens.tailProbabilities.confidenceRegion(0.91) == 1.0)
+    assert(dens.tailProbabilities.confidenceRegion(1.00) == 1.0)
   }
 
 
