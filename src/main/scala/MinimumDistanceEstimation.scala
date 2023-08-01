@@ -14,6 +14,94 @@
  * limitations under the License.
  **************************************************************************/
 
+/**
+ * ---------------------- Distributed Scheffe Set Calculations ---------------------
+ *
+ * We start by noting that calculating the following part in Delta_theta is not hard!
+ * 
+ * 	INTEGRAL[A_(phi,eta)] f_theta dx,   A_(phi,eta) := Sheffe set {f_phi > f_eta}.
+ * 
+ * For any chosen K histograms, this requires O(K^2 * n) computations, n = |CRP.size|
+ * since any such A is the union of a set of leaves L_i. Thus, whenever we pass over
+ * a leaf L_i in our linear traversal of all leaves in the CRP, we simply note which
+ * Scheffe sets the leaf belongs to, and calculate
+ * 
+ * 	INTEGRAL[L_i] f_theta dx
+ * 
+ * Since all leaves are disjoint, we have that 
+ * 	
+ * 	INTEGRAL[A(phi,eta)] f_theta dx 
+ * 		= INTEGRAL[Union_i L_i] f_theta dx
+ * 		= SUM_i [INTEGRAL[L_i] f_theta dx]
+ * 	
+ * Therefore, the calculation of the integral can be done fully distributed in a
+ * map-reduce operation, where every worker can calculate all the local intergrals
+ * of its leaves (of the finest histogram) and the sum of the final sums from each 
+ * worker. This will probably only affect the performance of the MDE method if the 
+ * histogram is really large; so it might not be to important to make it distributed. 
+ * Nonetheless, it can be done fast, and also seperated from the larger performance
+ * hog; namely the calculations of the empirical measure over A_(phi,eta).
+ * 
+ * The biggest win we can achieve here is to remove worker communications + improve
+ * the time complexity for creating the first validation (leaves,counts) at the CRP
+ * -depth + reusing created validation (leaves, counts):
+ * 
+ * (1) First iteration pass of computational complexity O(k^2 * v) where v is the length
+ *     of the validation (leaves, counts).
+ * 
+ * (2) In any successive iteration, use the validation (leaves, counts) generated at 
+ *     the CRP-depth in the previous iteration as an intermediate validation 
+ *     (leaves,counts), instead of starting over from the beginning with the original
+ *     validation (leaves,counts).
+ * 
+ * This will only require us to apply a sort on locally within the validationRDD
+ * partitions as a pre-processing step for the algorithm. Then, only the first iteration
+ * (1) should be of any larger cost while iterations in (2) should be super quick.
+ * By applying these array iteration algorithms, we only have to store the finest 
+ * histogram we are considering, and for any RDD data, we can make the partitions 
+ * as refined as need be so that the can be stored in main-memory as well. The original
+ * partitions should work though, since we could apply the splits and hold the 
+ * partitions in memory at the start of the estimation procedure.
+ * 
+ * In the algorithm, which we describe below, each worker would pass through, from left
+ * to right, both the validation leaves (which it owns) and the whole finest histogram.
+ * Thus we can in the same algorithm divide up the work of calculating density integrals
+ * over Scheffe sets and calculating the empirical measure values! Since the empirical
+ * measure's value is simply
+ * 
+ * 	 #{ A_(phi,eta) count }     SUM_T #{ Worker T's count in A_(phi,eta) }
+ * 	------------------------ = --------------------------------------------.
+ * 	 #{ Validation count }               #{ Validation count }
+ * 
+ * Again this is simply a map-reduce operation, similar to the first sum of integrals.
+ * If we for the moment skip the distribution of the integral calculation stuff, and
+ * instead focus on the empirical measure, the algorithm becomes as follows:
+ * 
+ * Algorithm(finestHistogram : CRP, iterator : LeavesIterator)
+ * {
+ * (0)	leaves <- Either prev.  + counts or the partitoned and sorted original RDD.
+ * (1)	hi <- Initalize histogramIndex to start of finestHistogram leaves (sorted)
+ * (2) 	newLeaves <- (finestHistogram.leaves, 0)
+ * (3) 	countMatrix <- MATRIX[K,K] = 0
+ * 	FOR (leaf in iterator) DO 
+ * 		WHILE (histogram.leaves(hi) != leaf.ancestor) DO 
+ * (4)			hi += 1
+ * 		END
+ * (5)		newLeaves(hi).count += leaf.count	
+ * 		FOR (i = 0 UNTIL K)
+ * 			FOR (j = i+1 UNTIL K)	
+ * (6)				IF (leaf[ f_(ij) ] > leaf[ f_(ji) ]) DO
+ * 					countMatrix[i][j] += leaf.count
+ * 				ELSE IF (leaf[ f_(ij) ] < leaf[ f_(ji) ])
+ * 					countMatrix[j][i] += leaf.count
+ * 				END
+ * 			END
+ * 		END
+ * 	END
+ * (7)	return (newLeaves, countMatrix) 
+ * }
+ */
+
 package co.wiklund.disthist
 
 import math.min
@@ -102,7 +190,7 @@ object MDEFunctions {
   }
 
   /**
-   * TODO: Memory issues on crpWithValMapBC
+   * TODO: Memory issues on crpWithValMapBC, A real performance-hog, all parts
    */
   def getDelta(crp: CollatedHistogram[String], validationHist: Histogram, verbose: Boolean = false): Vector[(String, Double)] = {
     // Spark must be running
@@ -142,6 +230,7 @@ object MDEFunctions {
     if (verbose) println("Calculating deviations from validation")
     
     // Wrrapped in function due to serialialization issues otherwise...
+    /* TODO: Performance Hog! */
     val deviationsFromValidation = { crpWithValMapBC: BCType => 
       scheffeDS.map{ set => 
         val crpWithValMapLocal = crpWithValMapBC.value.map{ case (lab, arr) => (NodeLabel(lab), arr.toMap)}.toMap
@@ -216,6 +305,7 @@ object MDEFunctions {
     */
 
     if (verbose) println("--- Computing histogram deviations from validation ---")
+    /* Giga-hog of performance */
     val validationDeviations = getDelta(crp, valHist, verbose)
     
     val bestIndex = validationDeviations.head._1.toInt
