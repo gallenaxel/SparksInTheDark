@@ -690,7 +690,7 @@ class FullRunTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val merged = mergeLeavesRDD(subtreeRDD, countLimit, depthLimit, true)
     println("merging done")
 
-    val mde = getMDE(
+    val mde = getMDEPrime(
       Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap)), 
       countedTest, 
       kInMDE, 

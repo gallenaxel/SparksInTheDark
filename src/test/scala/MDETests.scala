@@ -157,11 +157,11 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     numLeavesAboveLimit shouldEqual 0
   }
 
-    "getMDE" should "give a correct histogram" in {
+    "getMDEPrime" should "give a correct histogram" in {
     val spark = getSpark
     import spark.implicits._
     val mergedHist = collectHistogram(tree, spark.read.parquet(checkpointDir + "/merged").as[(NodeLabel, Count)])
-    val mdeHist = getMDE(mergedHist, valDS.rdd, 5, true)
+    val mdeHist = getMDEPrime(mergedHist, valDS.rdd, 5, true)
 
     mdeHist.counts.vals.sum shouldEqual dfnum
   }

@@ -129,7 +129,7 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val subtreeRDD = countedTrain.repartitionAndSortWithinPartitions(partitioner)
     val merged = mergeLeavesRDD(subtreeRDD, countLimit, depthLimit)
   
-    density = toDensityHistogram(getMDE(
+    density = toDensityHistogram(getMDEPrime(
       Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap)), 
       countedValidation, 
       kInMDE, 
@@ -1030,7 +1030,7 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     val hist = Histogram(tree, merged.map(_._2).reduce(_+_), fromNodeLabelMap(merged.toMap))
     var stopSize = Option.empty[Int]
     
-    density = toDensityHistogram(getMDE(
+    density = toDensityHistogram(getMDEPrime(
       hist,
       countedTest, 
       kInMDE, 
