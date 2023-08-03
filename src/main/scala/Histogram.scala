@@ -80,6 +80,27 @@ case class TailProbabilities(tree : SpatialTree, tails : LeafMap[Probability]) e
       case (_, Some(p)) => p
     }
   }
+
+  /**
+   * confidenceRegion - Retrieve the probability of the smallest coverage region with probability >= wantedConfidence.
+   *                  Thus, if one wants a confidence region of 95% confidence, the function returns the smallest confidence
+   *                  region in TailsProbabilities with confidence >= wantedConfidence.
+   *
+   * @param wantedConfidence - Minimum allowed confidence of the confidence region whose probability is returned.
+   * @return The probability of the smallest confidence region with at least wantedConfidence probability.
+   */
+  def confidenceRegion(wantedConfidence : Double) : Double = {
+    
+    assert(0.0 <= wantedConfidence && wantedConfidence <= 1.0)
+
+    var minProb : Double = 1.0
+    for (i <- 0 until tails.vals.length) {
+      if (tails.vals(i) >= wantedConfidence && tails.vals(i) < minProb) {
+        minProb = tails.vals(i)
+      }
+    }
+    minProb
+  }
 }
 
 /**
