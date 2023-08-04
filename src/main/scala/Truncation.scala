@@ -356,7 +356,7 @@ object TruncationFunctions {
     while (coarseIndex < coarser.leaves.length) {
 
       val ss = finer.subtree(coarser.leaves(coarseIndex))
-      if (coarser.leaves(coarseIndex) == finer.leaves(fineIndex)) {
+      if (fineIndex < finer.leaves.length && coarser.leaves(coarseIndex) == finer.leaves(fineIndex)) {
         union(unionIndex) = finer.leaves(fineIndex)
         fineIndex += 1
         unionIndex += 1
