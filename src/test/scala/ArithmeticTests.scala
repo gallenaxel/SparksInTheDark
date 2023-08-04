@@ -159,7 +159,8 @@ class ArithmeticTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     assert(union5(2) == NodeLabel(10))
     assert(union5(3) == NodeLabel(11))
     assert(union5(4) == NodeLabel(12))
-    assert(union5(5) == NodeLabel(7))
+    assert(union5(5) == NodeLabel(13))
+    assert(union5(6) == NodeLabel(7))
 
   }
 
