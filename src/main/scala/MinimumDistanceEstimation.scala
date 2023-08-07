@@ -75,7 +75,7 @@
  * 
  * Again this is simply a map-reduce operation, similar to the first sum of integrals.
  * If we for the moment skip the distribution of the integral calculation stuff, and
- * instead focus on the empirical measure, the algorithm becomes as follows:
+ * instead focus on the empirical measure, the algorithm roughly becomes as follows:
  * 
  * Algorithm(finestHistogram : CRP, iterator : LeavesIterator)
  * {
@@ -363,13 +363,13 @@ object MDEFunctions {
       /* Continue until next CRP ancestor is found */
       /* Can we remove isAncestorOf somehow? costly, involves heap allocations...? */
       /* TODO(Performance): Can we remove isAncestorOf somehow? costly, involves heap allocations...?  */
+      /* TODO(Performance): if leaf == crpLeaf, add count immediately, move leaf,crpIndex (Skips one isAncestorOf next round!)  */
       /**
        * NOTE: Order of booleans is important! crpIndex must be checked first, and afterwards we achieve an early exit without having
        * do a heap allocation, since for many calls to this method, the histograms inside the CRP will share many leaves. (Will
        * this hold in a distributed system? 
        *
        */
-      /* TODO(Performance): if leaf == crpLeaf, add count immediately, move leaf,crpIndex (Skips one isAncestorOf next round!)  */
       while (crpIndex < crpLeaves.length && !(leaf._1 == crpLeaves(crpIndex)._1) && !isAncestorOf(crpLeaves(crpIndex)._1, leaf._1)) {
         crpIndex += 1
       }
@@ -443,17 +443,18 @@ object MDEFunctions {
     val stepSize = stopIndex / (k-1)
     if (verbose) println("--- Backtracking histogram ---")
     val backtrackedHist = spacedBacktrack(hist, 0, stopIndex, stepSize, verbose).reverse
+    val h = backtrackedHist.length
     
     if (verbose) println("--- Merging CRPs ---")
     val crp = spacedHistToCRP(backtrackedHist, verbose)
 
     /* Make two big allocs, setup simple crp format (NodeLabel, Array[density], Volume) */
     var crpLeaves : Array[(NodeLabel, Array[Double])] = new Array(crp.densities.leaves.length)
-    var crpValues : Array[Array[Double]] = Array.ofDim[Double](crp.densities.leaves.length, k)
+    var crpValues : Array[Array[Double]] = Array.ofDim[Double](crp.densities.leaves.length, h)
     for (i <- 0 until crpLeaves.length) {
-      for (j <- 0 until k) {
-        /* index 0 corresponds to finest density, k-1 = coarsest */
-        crpValues(i)(k-1-j) = crp.densities.vals(i).apply(s"$j")._1
+      for (j <- 0 until h) {
+        /* index 0 corresponds to finest density, h-1 = coarsest */
+        crpValues(i)(h-1-j) = crp.densities.vals(i).apply(s"$j")._1
       }
       crpLeaves(i) = (crp.densities.truncation.leaves(i), crpValues(i))
     }
@@ -465,18 +466,18 @@ object MDEFunctions {
      * the integral.
      * TODO(Optimisation): Can be made distributed if need be, would give better numerical accuracy as well? 
      */
-    var scheffeIntegrals : Array[Array[Array[Double]]] = Array.ofDim[Double](k,k,k)
+    var scheffeIntegrals : Array[Array[Array[Double]]] = Array.ofDim[Double](h,h,h)
     for (l <- 0 until crpLeaves.length) {
       val leaf = crpLeaves(l)
       val volume = crp.tree.volumeAt(leaf._1)
-      for (i <- 0 until k) {
-        for (j <- (i+1) until k) {
+      for (i <- 0 until h) {
+        for (j <- (i+1) until h) {
           if (leaf._2(i) > leaf._2(j))  {
-            for (t <- 0 until k) {
+            for (t <- 0 until h) {
               scheffeIntegrals(i)(j)(t) += volume * leaf._2(t)
             }
           } else if (leaf._2(i) < leaf._2(j)) {
-            for (t <- 0 until k) {
+            for (t <- 0 until h) {
               scheffeIntegrals(j)(i)(t) += volume * leaf._2(t)
             }
           }
@@ -486,9 +487,9 @@ object MDEFunctions {
 
     /* TODO(Possible Bug): Registering new accumulators under same name, how to we unregister old ones? */ 
     if (verbose) println("--- Setting up count accumulators ---")
-    var scheffeCountAccumulators : Array[Array[LongAccumulator]] = Array.ofDim[LongAccumulator](k,k)
-    for (i <- 0 until k) {
-      for (j <- (i+1) until k) {
+    var scheffeCountAccumulators : Array[Array[LongAccumulator]] = Array.ofDim[LongAccumulator](h,h)
+    for (i <- 0 until h) {
+      for (j <- (i+1) until h) {
         scheffeCountAccumulators(i)(j) = spark.sparkContext.longAccumulator(s"$i,$j")
         scheffeCountAccumulators(j)(i) = spark.sparkContext.longAccumulator(s"$j,$i")
       }
@@ -501,9 +502,9 @@ object MDEFunctions {
     mergedValidationData.count
     validationData.unpersist()
 
-    var scheffeEmpiricals : Array[Array[Double]] = Array.ofDim[Double](k,k)
-    for (i <- 0 until k) {
-      for (j <- (i+1) until k) {
+    var scheffeEmpiricals : Array[Array[Double]] = Array.ofDim[Double](h,h)
+    for (i <- 0 until h) {
+      for (j <- (i+1) until h) {
         scheffeEmpiricals(i)(j) = scheffeCountAccumulators(i)(j).value.toDouble / validationCount
         scheffeEmpiricals(j)(i) = scheffeCountAccumulators(j)(i).value.toDouble / validationCount
       }
@@ -511,7 +512,7 @@ object MDEFunctions {
 
     if (verbose) {
       scheffeEmpiricals.foreach(line => {
-        for (i <- 0 until k) {
+        for (i <- 0 until h) {
           print(line(i) + " ")
         }
         println("")
@@ -519,10 +520,10 @@ object MDEFunctions {
     }
 
     if (verbose) println("--- Finding the Minimum Delta  ---")
-    var deltas : Array[Double] = new Array(k)
-    for (i <- 0 until k) {
-      for (j <- (i+1) until k) {
-        for (t <- 0 until k) {
+    var deltas : Array[Double] = new Array(h)
+    for (i <- 0 until h) {
+      for (j <- (i+1) until h) {
+        for (t <- 0 until h) {
           var distance = abs(scheffeIntegrals(i)(j)(t) - scheffeEmpiricals(i)(j))
           deltas(t) = max(distance, deltas(t))
           distance = abs(scheffeIntegrals(j)(i)(t) - scheffeEmpiricals(j)(i))
@@ -532,7 +533,7 @@ object MDEFunctions {
     }
 
     var mdeIndex = 0 
-    for (i <- 1 until k) {
+    for (i <- 1 until h) {
       if (deltas(i) < deltas(mdeIndex)) {
         mdeIndex = i
       }
