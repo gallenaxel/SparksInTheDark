@@ -207,6 +207,16 @@ object MDEFunctions {
     // Find the Scheffe sets corresponding to all pairs of histograms
     val scheffeSets = {
       val crpDensVector = crp.densities.toIterable.toVector
+      //val tmp = crp.keySet.toVector.flatMap(i => crpKeys.drop(i.toInt + 1).map((i,_)))
+      //val upper =  tmp.map{ case (theta1, theta2) =>
+      //  val keys = Set(theta1, theta2)
+      //  (theta1, theta2) -> crpDensVector.filter{ case (_, densMap) => densMap(theta1)._1 > densMap(theta2)._1 }.map{case (node, _) => node}
+      //}
+      //val lower =  tmp.map{ case (theta1, theta2) =>
+      //  val keys = Set(theta2, theta1)
+      //  (theta2, theta1) -> crpDensVector.filter{ case (_, densMap) => densMap(theta2)._1 > densMap(theta1)._1 }.map{case (node, _) => node}
+      //}
+      //upper ++ lower
       crp.keySet.toVector.flatMap(i => crpKeys.drop(i.toInt + 1).map((i,_))).map{ case (theta1, theta2) =>
         val keys = Set(theta1, theta2)
         (theta1, theta2) -> crpDensVector.filter{ case (_, densMap) => densMap(theta1)._1 > densMap(theta2)._1 }.map{case (node, _) => node}
@@ -442,7 +452,8 @@ object MDEFunctions {
     var crpValues : Array[Array[Double]] = Array.ofDim[Double](crp.densities.leaves.length, k)
     for (i <- 0 until crpLeaves.length) {
       for (j <- 0 until k) {
-        crpValues(i)(j) = crp.densities.vals(i).apply(s"$j")._1
+        /* index 0 corresponds to finest density, k-1 = coarsest */
+        crpValues(i)(k-1-j) = crp.densities.vals(i).apply(s"$j")._1
       }
       crpLeaves(i) = (crp.densities.truncation.leaves(i), crpValues(i))
     }
@@ -498,12 +509,14 @@ object MDEFunctions {
       }
     }
 
-    scheffeEmpiricals.foreach(line => {
-      for (i <- 0 until k) {
-        print(line(i) + " ")
-      }
-      println("")
-    })
+    if (verbose) {
+      scheffeEmpiricals.foreach(line => {
+        for (i <- 0 until k) {
+          print(line(i) + " ")
+        }
+        println("")
+      })
+    }
 
     if (verbose) println("--- Finding the Minimum Delta  ---")
     var deltas : Array[Double] = new Array(k)
