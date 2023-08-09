@@ -54,14 +54,15 @@
  *     (leaves,counts), instead of starting over from the beginning with the original
  *     validation (leaves,counts).
  * 
- * This will only require us to apply a sort on locally within the validationRDD
+ * This will only require us to apply a local sort within the validationRDD
  * partitions as a pre-processing step for the algorithm. Then, only the first iteration
- * (1) should be of any larger cost while iterations in (2) should be super quick.
+ * (1) should be of any larger cost while iterations in (2) should be quicker.
  * By applying these array iteration algorithms, we only have to store the finest 
- * histogram we are considering, and for any RDD data, we can make the partitions 
- * as refined as need be so that the can be stored in main-memory as well. The original
- * partitions should work though, since we could apply the splits and hold the 
- * partitions in memory at the start of the estimation procedure.
+ * histogram we are considering + any validation leaves found outside the histogram,
+ * and for any RDD data, we can make the partitions as refined as need be so that they
+ * can be stored in main-memory as well. The original partitions should work though,
+ * since we could apply the splits and hold the partitions in memory at the start of
+ * the estimation procedure.
  * 
  * In the algorithm, which we describe below, each worker would pass through, from left
  * to right, both the validation leaves (which it owns) and the whole finest histogram.
@@ -73,33 +74,8 @@
  * 	------------------------ = --------------------------------------------.
  * 	 #{ Validation count }               #{ Validation count }
  * 
- * Again this is simply a map-reduce operation, similar to the first sum of integrals.
- * If we for the moment skip the distribution of the integral calculation stuff, and
- * instead focus on the empirical measure, the algorithm roughly becomes as follows:
- * 
- * Algorithm(finestHistogram : CRP, iterator : LeavesIterator)
- * {
- * (0)	leaves <- Either prev.  + counts or the partitoned and sorted original RDD.
- * (1)	hi <- Initalize histogramIndex to start of finestHistogram leaves (sorted)
- * (2) 	newLeaves <- (finestHistogram.leaves, 0)
- * (3) 	countMatrix <- MATRIX[K,K] = 0
- * 	FOR (leaf in iterator) DO 
- * 		WHILE (histogram.leaves(hi) != leaf.ancestor) DO 
- * (4)			hi += 1
- * 		END
- * (5)		newLeaves(hi).count += leaf.count	
- * 		FOR (i = 0 UNTIL K)
- * 			FOR (j = i+1 UNTIL K)	
- * (6)				IF (leaf[ f_(ij) ] > leaf[ f_(ji) ]) DO
- * 					countMatrix[i][j] += leaf.count
- * 				ELSE IF (leaf[ f_(ij) ] < leaf[ f_(ji) ])
- * 					countMatrix[j][i] += leaf.count
- * 				END
- * 			END
- * 		END
- * 	END
- * (7)	return (newLeaves, countMatrix) 
- * }
+ * Again this is simply can be viewed as a map-reduce operation, similar to the first
+ * sum of integrals.
  */
 
 package co.wiklund.disthist
@@ -295,6 +271,7 @@ object MDEFunctions {
       truncatedValData.map(_._2).reduce(_+_),
       fromNodeLabelMap(
         { leafMap: LeafMap[_] =>
+            /* This line is not correct prob? will find tree non ancestor of leaf, gives wrong count at that tree */
             truncatedValData.map(t => { (findSubtree(t._1, leafMap.truncation.leaves), t._2) }).reduceByKey((v1, v2) => v1 + v2)
         }.apply(crpLeafMap)
           .collect.toMap
@@ -332,59 +309,52 @@ object MDEFunctions {
   }
 
   /**
-   * TODO(Performance): Can we avoid all the small allocations done in isAncestorOf? Shouldn't this be super fast after 1 merge?
+   * TODO(Performance): Can we avoid all the small allocations being tone? Should this not be super fast after 1 merge?
    * scheffeSetsValidationCount - Calculate Local empirical measure scheffe set counts for validation data and sum up counts using
    *                           accumulators.
    * @param crpLeaves - sorted leaves of crp
    * @param validationLeaves - sorted leaves of validation data
+   * @param crpMaxDepth - The max depth of the CRP
    * @param sheffeCountAccumulators - Accumulators of validation data count for each Scheffe set
    * @return The new mergedValidationLeaves, the validation leaves merged up to the crp's level, or depth.
    */
-  def scheffeSetsValidationCount(crpLeaves : Array[(NodeLabel, Array[Double])], validationLeaves : Iterator[(NodeLabel, Count)], sheffeCountAccumulators : Array[Array[LongAccumulator]]) : Iterator[(NodeLabel, Count)] = {
+  def scheffeSetsValidationCount(crpLeaves : Array[(NodeLabel, Array[Double])], validationLeaves : Iterator[(NodeLabel, Count)], crpMaxDepth : Depth, sheffeCountAccumulators : Array[Array[LongAccumulator]]) : Iterator[(NodeLabel, Count)] = {
     var crpIndex = 0
-    var mergedIndex = 0
-    var mergedValidationLeaves : Array[(NodeLabel, Count)] = new Array(crpLeaves.length)
-    mergedValidationLeaves(0) = (NodeLabel(1), 0)
+    var mergeIndex = 0
+    var mergeValidationLeaves : Array[(NodeLabel, Count)] = new Array(crpLeaves.length)
 
     val k = sheffeCountAccumulators.length
     var countMatrix : Array[Array[Count]] = Array.ofDim[Count](k,k)
 
-    var leaf : (NodeLabel,Count) = validationLeaves.next 
-    var stop : Boolean = false
+    var leaf : (NodeLabel,Count) = null 
+    while (validationLeaves.hasNext) {
 
-    /**
-     * Skip leftmost validaition leaves to the left of all Scheffe set regions 
-     */
-    while (isStrictLeftOf(leaf._1, crpLeaves(0)._1) && validationLeaves.hasNext) {
       leaf = validationLeaves.next
-    }
+      var trunc : NodeLabel = null
 
-    do {
-      /* Continue until next CRP ancestor is found */
-      /* Can we remove isAncestorOf somehow? costly, involves heap allocations...? */
-      /* TODO(Performance): Can we remove isAncestorOf somehow? costly, involves heap allocations...?  */
-      /* TODO(Performance): if leaf == crpLeaf, add count immediately, move leaf,crpIndex (Skips one isAncestorOf next round!)  */
+      /* Find the next crp leaf that our validation leaf is left of. */
+      while (crpIndex < crpLeaves.length && !isLeftOf(leaf._1.truncate(crpLeaves(crpIndex)._1.depth), crpLeaves(crpIndex)._1)) {
+        crpIndex += 1 
+      } 
+
       /**
-       * NOTE: Order of booleans is important! crpIndex must be checked first, and afterwards we achieve an early exit without having
-       * do a heap allocation, since for many calls to this method, the histograms inside the CRP will share many leaves. (Will
-       * this hold in a distributed system? 
+       * At this point, leaf will be strictly to the right of crpLeaves(crpIndex-1), 
+       * and left (not strictly) of crpLeaves(crpIndex) if crpIndex < crpLeaves.length
        *
+       * Check if leaf is in possible scheffe set
        */
-      while (crpIndex < crpLeaves.length && !(leaf._1 == crpLeaves(crpIndex)._1) && !isAncestorOf(crpLeaves(crpIndex)._1, leaf._1)) {
-        crpIndex += 1
-      }
-
-      /**
-       * If ancestor is not in merged array, add it, else update count, but only do this if we are still within Scheffe set regions.
-       * crpIndex >= crpLeaves will only happen if the rightmost leaves of the validation leaves are to the right of all CRP leaves
-       * which make up the scheffe sets, and thus their counts should not be added to any Scheffe sets.
-       */
-      if (crpIndex < crpLeaves.length) {
-        if (mergedIndex == 0 || mergedValidationLeaves(mergedIndex-1)._1 != crpLeaves(crpIndex)._1) {
-          mergedValidationLeaves(mergedIndex) = (crpLeaves(crpIndex)._1, leaf._2)
-          mergedIndex += 1
+      if (crpIndex < crpLeaves.length && leaf._1.truncate(crpLeaves(crpIndex)._1.depth) == crpLeaves(crpIndex)._1) {
+    
+        if (mergeIndex > 0 && mergeValidationLeaves(mergeIndex-1)._1 == crpLeaves(crpIndex)._1) {
+          mergeValidationLeaves(mergeIndex-1) = (mergeValidationLeaves(mergeIndex-1)._1, mergeValidationLeaves(mergeIndex-1)._2 + leaf._2)
         } else {
-          mergedValidationLeaves(mergedIndex-1) = (crpLeaves(crpIndex)._1, mergedValidationLeaves(mergedIndex-1)._2 + leaf._2)
+          if (mergeIndex >= mergeValidationLeaves.length) {
+            var tmp = mergeValidationLeaves
+            mergeValidationLeaves = new Array(2 * tmp.length)
+            tmp.copyToArray(mergeValidationLeaves)
+          }
+          mergeValidationLeaves(mergeIndex) = (crpLeaves(crpIndex)._1, leaf._2)
+          mergeIndex += 1
         }
 
         /* Find what sheffe sets the leaf belongs to and add counts to Partial Sheffe Count Matrix */ 
@@ -397,14 +367,22 @@ object MDEFunctions {
             }
           }
         }
-      }
-
-      if (validationLeaves.hasNext) {
-        leaf = validationLeaves.next
+      /* crpLeaves(crpIndex-1) < leaf < crpLeaves(crpIndex) || crpLeaves(LAST) < leaf */
       } else {
-        stop = true
+        leaf = (leaf._1.truncate(crpMaxDepth), leaf._2)
+        if (mergeIndex > 0 && mergeValidationLeaves(mergeIndex-1)._1 == leaf._1) {
+          mergeValidationLeaves(mergeIndex-1) = (mergeValidationLeaves(mergeIndex-1)._1, mergeValidationLeaves(mergeIndex-1)._2 + leaf._2)
+        } else {
+          if (mergeIndex >= mergeValidationLeaves.length) {
+            var tmp = mergeValidationLeaves
+            mergeValidationLeaves = new Array(2 * tmp.length)
+            tmp.copyToArray(mergeValidationLeaves)
+          }
+          mergeValidationLeaves(mergeIndex) = leaf
+          mergeIndex += 1
+        }
       }
-    } while (!stop)
+    }
 
     for (i <- 0 until k) {
       for (j <- (i+1) until k) {
@@ -412,8 +390,7 @@ object MDEFunctions {
         sheffeCountAccumulators(j)(i).add(countMatrix(j)(i))
       }
     }
-
-    mergedValidationLeaves.take(mergedIndex).toIterator
+    mergeValidationLeaves.take(mergeIndex).toIterator
   }
 
   /**
@@ -451,12 +428,14 @@ object MDEFunctions {
     /* Make two big allocs, setup simple crp format (NodeLabel, Array[density], Volume) */
     var crpLeaves : Array[(NodeLabel, Array[Double])] = new Array(crp.densities.leaves.length)
     var crpValues : Array[Array[Double]] = Array.ofDim[Double](crp.densities.leaves.length, h)
+    var maxDepth : Depth = 0
     for (i <- 0 until crpLeaves.length) {
       for (j <- 0 until h) {
         /* index 0 corresponds to finest density, h-1 = coarsest */
         crpValues(i)(h-1-j) = crp.densities.vals(i).apply(s"$j")._1
       }
       crpLeaves(i) = (crp.densities.truncation.leaves(i), crpValues(i))
+      maxDepth = max(maxDepth, crpLeaves(i)._1.depth)
     }
 
     if (verbose) println("--- Calculating Scheffe Set Integrals for histograms ---")
@@ -485,8 +464,7 @@ object MDEFunctions {
       }
     }
 
-    /* TODO(Possible Bug): Registering new accumulators under same name, how to we unregister old ones? */ 
-    if (verbose) println("--- Setting up count accumulators ---")
+    /* TODO(Possible Bug): Registering new accumulators under same name, do we need to unregister old ones? */ 
     var scheffeCountAccumulators : Array[Array[LongAccumulator]] = Array.ofDim[LongAccumulator](h,h)
     for (i <- 0 until h) {
       for (j <- (i+1) until h) {
@@ -496,7 +474,7 @@ object MDEFunctions {
     }
 
     if (verbose) println("--- Calculating empirical measure over Scheffe sets ---")
-    val mergedValidationData = validationData.mapPartitions(iter => scheffeSetsValidationCount(crpLeaves, iter, scheffeCountAccumulators)).cache
+    val mergedValidationData = validationData.mapPartitions(iter => scheffeSetsValidationCount(crpLeaves, iter, maxDepth, scheffeCountAccumulators)).cache
 
     /* TODO: Force action to be taken before checking accumulators! Can this be done in a faster way than count? */
     mergedValidationData.count
