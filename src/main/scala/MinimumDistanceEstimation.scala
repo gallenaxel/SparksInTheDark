@@ -57,8 +57,8 @@
  * This will only require us to apply a local sort within the validationRDD
  * partitions as a pre-processing step for the algorithm. Then, only the first iteration
  * (1) should be of any larger cost while iterations in (2) should be quicker.
- * By applying these array iteration algorithms, we only have to store the finest 
- * histogram we are considering + any validation leaves found outside the histogram,
+ * By applying these array iteration algorithms, we only have to store the crp 
+ * we are considering + any validation leaves found outside the crp's leaves,
  * and for any RDD data, we can make the partitions as refined as need be so that they
  * can be stored in main-memory as well. The original partitions should work though,
  * since we could apply the splits and hold the partitions in memory at the start of
