@@ -64,11 +64,9 @@
  * since we could apply the splits and hold the partitions in memory at the start of
  * the estimation procedure.
  * 
- * In the algorithm, which we describe below, each worker would pass through, from left
+ * In the algorithm scheffeSetsValidationCount each worker will pass through, from left
  * to right, both the validation leaves (which it owns) and the whole finest histogram.
- * Thus we can in the same algorithm divide up the work of calculating density integrals
- * over Scheffe sets and calculating the empirical measure values! Since the empirical
- * measure's value is simply
+ * The empirical measure's value is simply
  * 
  * 	 #{ A_(phi,eta) count }     SUM_T #{ Worker T's count in A_(phi,eta) }
  * 	------------------------ = --------------------------------------------.
