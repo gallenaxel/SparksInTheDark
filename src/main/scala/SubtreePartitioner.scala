@@ -16,7 +16,9 @@
 
 package co.wiklund.disthist
 
-import scala.util.Random
+import org.apache.commons.rng.UniformRandomProvider;
+import org.apache.commons.rng.simple.RandomSource;
+
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.PriorityQueue
 import scala.math.{max,floor,round,exp,log,log10,pow}
@@ -176,11 +178,19 @@ object SubtreePartitionerFunctions {
   * reservoirSamplingLAndCount - Implementation of Reservoir Sampling algorithm L, [Reservoir-sampling algorithms of time complexity O(n(1+log(N/n))), Kim-Hung Li].
   * @param iter - The iterator over the leaves from which we wish to sample
   * @param sampleSize - The sample size
-  * @param seed - The seed 
+  * @param seed - The seed [Optional]
   * @return an iterator containing the generated sample and the length of the input
   */
-  def reservoirSamplingLAndCount(iter : Iterator[NodeLabel], sampleSize : Int, seed : Long = Random.nextLong()) : (Array[NodeLabel], Long) = {
-    val random = new Random(seed)
+  def reservoirSamplingLAndCount(iter : Iterator[NodeLabel], sampleSize : Int, seed : Long) : (Array[NodeLabel], Long) = {
+    val rng : UniformRandomProvider = RandomSource.XO_RO_SHI_RO_128_PP.create(seed)
+    reservoirSamplingLAndCount(iter, sampleSize, rng)
+  }
+
+  def reservoirSamplingLAndCount(iter : Iterator[NodeLabel], sampleSize : Int) : (Array[NodeLabel], Long) = {
+    val rng : UniformRandomProvider = RandomSource.XO_RO_SHI_RO_128_PP.create()
+    reservoirSamplingLAndCount(iter, sampleSize, rng)
+  }
+  def reservoirSamplingLAndCount(iter : Iterator[NodeLabel], sampleSize : Int, rng : UniformRandomProvider) : (Array[NodeLabel], Long) = {
     var sample : Array[NodeLabel] = new Array(sampleSize)
     var len : Long = 0
     var i = 0
@@ -199,12 +209,12 @@ object SubtreePartitionerFunctions {
     var continue = true
     var rem = iter
     while (continue) {
-      W = W * exp(log(random.nextDouble)/sampleSize)
-      val S = floor(log(random.nextDouble)/log(1-W)).toInt
+      W = W * exp(log(rng.nextDouble)/sampleSize)
+      val S = floor(log(rng.nextDouble)/log(1-W)).toInt
       rem = rem.drop(S)
       len += S
       if (rem.hasNext) {
-        sample(random.nextInt(sampleSize)) = rem.next 
+        sample(rng.nextInt(sampleSize)) = rem.next 
         len += 1
       } else {
         continue = false 
