@@ -28,6 +28,8 @@ import LeafMapFunctions._
 import SpatialTreeFunctions._
 import TruncationFunctions._
 
+
+@deprecated("Object is not used anywhere")
 object SplitEstimatorFunctions {
   type SplitLimits = (Volume, Count) => (Int, Volume, Count) => Boolean
 

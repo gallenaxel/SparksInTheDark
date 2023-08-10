@@ -55,7 +55,7 @@ abstract class SpatialTree extends Serializable {
     unfoldTreeCached(rootCell)((lab, box) => box.lower(axisAt(lab.parent)),
                                (lab, box) => box.upper(axisAt(lab.parent)))
 
-    def descendBoxPrime(point : MLVector) : Stream[(NodeLabel, Rectangle)]
+  def descendBoxPrime(point : MLVector) : Stream[(NodeLabel, Rectangle)]
 
   /**
     * Sub-boxes that the point belongs to at increasing depths
@@ -92,9 +92,12 @@ case class WidestSplitTree(rootCellM : Rectangle) extends SpatialTree {
       if(l) cell.lower(i) else cell.upper(i)
   }
 
-    // TODO: Make a more efficient implementation of this!
-    // override def cellAtCached() : CachedUnfoldTree[Rectangle]
-
+  // TODO: Make a more efficient implementation of this!
+  // override def cellAtCached() : CachedUnfoldTree[Rectangle]
+    
+  /**
+   * Note: Use quickDescendBox if you want to descend all points to a specific depth, much faster.
+   */
   override def descendBoxPrime(point : MLVector) : Stream[(NodeLabel, Rectangle)] =
     splits.scanLeft((rootLabel, rootCell)) {
       case ((lab, box), along) =>

@@ -38,15 +38,18 @@ object MergeEstimatorFunctions {
     sparkOpt.get
   }
 
+  @deprecated("Use fast label implementation, quickToLabeled.")
   def labelAtDepth(tree: SpatialTree, depth: Int, points: RDD[MLVector]): RDD[(BigInt, MLVector)] =
     points.map(x => (tree.descendBox(x)(depth).lab, x))
 
+  @deprecated("Use fast label implementation, quickToLabeled.")
   def labelAtDepth(tree: SpatialTree, depth: Int, points: Dataset[Array[Double]]): Dataset[(NodeLabel, Array[Double])] = {
     val spark = getSpark
     import spark.implicits._
     points.map(x => (tree.descendBox(Vectors.dense(x))(depth), x))
   }
 
+  @deprecated("Use fast label implementation, quickToLabeled.")
   def labeledToCountedDS(labeledRDD: RDD[(BigInt, MLVector)]): Dataset[(NodeLabel, Count)] = {
     val spark = getSpark
     import spark.implicits._
@@ -55,6 +58,7 @@ object MergeEstimatorFunctions {
       .toDS.groupByKey(node => node).count
   }
 
+  @deprecated("Use fast label implementation, quickToLabeled.")
   def labeledToCountedDS(labeledDS: Dataset[(NodeLabel, Array[Double])]): Dataset[(NodeLabel, Count)] = {
     val spark = getSpark
     import spark.implicits._
@@ -80,6 +84,7 @@ object MergeEstimatorFunctions {
 
   def getTree[A](tree: SpatialTree)(f: SpatialTree => A) = f(tree)
 
+  @deprecated("Use subtree partitioning based strategy mergeLeavesRDD or mergeLeavesHistogram")
   def mergeLeavesStep(
     tree: SpatialTree, 
     countedDS: Dataset[(NodeLabel, Count)], 
@@ -116,6 +121,7 @@ object MergeEstimatorFunctions {
     }.flatMapGroups(mergeHistograms)
   }
 
+  @deprecated("Use subtree partitioning based strategy mergeLeavesRDD or mergeLeavesHistogram")
   def mergeLeaves(
     tree: SpatialTree,
     countedDS: Dataset[(NodeLabel, Count)],
@@ -149,6 +155,7 @@ object MergeEstimatorFunctions {
     tmpDS
   }
 
+  @deprecated("Datasets have been deprecated from library, cannot hold bigInts larger than 128 bits")
   def collectHistogram(tree: SpatialTree, ds: Dataset[(NodeLabel, Count)]): Histogram = {
     val leafMap = fromNodeLabelMap(ds.collect.toMap)
     Histogram(tree, leafMap.vals.sum, leafMap)

@@ -279,10 +279,12 @@ object HistogramFunctions {
     DensityHistogram(margTree, fromNodeLabelMap(margMap))
   }
 
+  @deprecated("Use faster quickSlice")
   def slice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoints: Vector[Double]): DensityHistogram = {
     slice(densHist, sliceAxes, Vectors.dense(slicePoints.toArray))
   }
 
+  @deprecated("Use faster quickSlice")
   def slice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoints: MLVector): DensityHistogram = {
     
     val sliceBoxes = densHist.densityMap.leaves.map( node => 

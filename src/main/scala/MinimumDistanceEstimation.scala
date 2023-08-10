@@ -164,9 +164,7 @@ object MDEFunctions {
     mergedCRPs
   }
 
-  /**
-   * Memory issues on crpWithValMapBC, A real performance-hog, all parts
-   */
+  @deprecated("Possibly bug filled, used in old getMDE version")
   def getDelta(crp: CollatedHistogram[String], validationHist: Histogram, verbose: Boolean = false): Vector[(String, Double)] = {
     // Spark must be running
     val spark = getSpark   
@@ -235,6 +233,7 @@ object MDEFunctions {
   /**
    * Old implementation of mdeStep
    */
+  @deprecated("Bug in valHist, only used in old getMDE")
   def mdeStepPrime(
     hist: Histogram, 
     validationData: RDD[(NodeLabel, Count)], 
@@ -524,9 +523,7 @@ object MDEFunctions {
     (bestHistogram, largerThanBest, mergedValidationData)
   }
 
-  /**
-   * getMDEPrime - Old implementation of getMDE
-   */
+  @deprecated("Old, buggy and slower version of getMDE")
   def getMDEPrime(
     hist: Histogram, 
     validationData: RDD[(NodeLabel, Count)], 

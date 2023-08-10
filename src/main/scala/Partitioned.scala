@@ -22,6 +22,7 @@ import org.apache.spark.rdd.PairRDDFunctions._
 import Types._
 
 // TODO: This should maybe be parameterised over Count/countByKey as well
+@deprecated("Class is not used anywhere")
 case class Partitioned[A](points : RDD[(BigInt, A)]) extends Serializable {
   def splittable(shouldSplit : (NodeLabel, Count) => Boolean) : (Map[NodeLabel, Count], Map[NodeLabel, Count]) = {
     // TODO: Why is keyBy needed, it should be noop here?!?
@@ -41,6 +42,7 @@ case class Partitioned[A](points : RDD[(BigInt, A)]) extends Serializable {
   def count() : Long = points.count()
 }
 
+@deprecated("Object is not used anywhere")
 object PartitionedFunctions {
   def partitionPoints(tree : SpatialTree, trunc : Truncation, points : RDD[MLVector]) : Partitioned[MLVector] =
     Partitioned(points.map(x => (trunc.descendUntilLeaf(tree.descendBox(x)).lab, x)))

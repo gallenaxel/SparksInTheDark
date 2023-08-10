@@ -54,12 +54,12 @@ import org.apache.spark.rdd.RDD
    *
    *                      It follows that every generated subtree's weight represents the estimated work that it will take to merge cells within the subtree. After the
    *                      subtrees have been generated, the Partitioner creates a HashMap that maps every subtree or subtrees with no representation (no sampled points found
-   *                      in the subtree) to individual partitions which should reign over the subtrees' data points. The subtrees are assigned to partitions in such a manner
-   *                      to minimize the weight of the heaviest partition. This is done by the simple approximation algorithm in which you iteratively assign the heaviest
-   *                      or most costly object to the partition or machine with the lowest load until all objects have been assigned. 
+   *                      in the subtree) to individual partitions which should reign over all data points found in the subtrees. The subtrees are assigned to partitions 
+   *                      in such a manner to minimize the weight of the heaviest partition. This is done by the simple approximation algorithm in which you iteratively 
+   *                      assign the heaviest or most costly object to the partition or machine with the lowest load until all objects have been assigned. 
    *
    * @param partitions - The number of wanted partitions when partitioning using the Partitioner
-   * @param rdd - RDD contain cell (NodeLabel, Count) daa
+   * @param rdd - RDD containing cells (NodeLabel, Count)
    * @param samplePointsPerPartitionHint - The sampleSize roughly used per new partition. The total sample size to estimate
    *    data distribution among subtrees of the data to base the Partitioning scheme on can be estimated to be 
    *    c * hint * numPartitions where 1 <= c <= 3.
