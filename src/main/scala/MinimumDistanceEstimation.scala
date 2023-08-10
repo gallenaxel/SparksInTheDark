@@ -325,9 +325,7 @@ object MDEFunctions {
 
     var leaf : (NodeLabel,Count) = null 
     while (validationLeaves.hasNext) {
-
       leaf = validationLeaves.next
-      var trunc : NodeLabel = null
 
       /* Find the next crp leaf that our validation leaf is left of. */
       while (crpIndex < crpLeaves.length && !isLeftOf(leaf._1.truncate(crpLeaves(crpIndex)._1.depth), crpLeaves(crpIndex)._1)) {
@@ -507,6 +505,8 @@ object MDEFunctions {
       }
     }
 
+    /* indices are reversed because we sorted the densities in the vector according to bottom->top */
+    deltas = deltas.reverse
     var mdeIndex = 0 
     for (i <- 1 until h) {
       if (deltas(i) < deltas(mdeIndex)) {
