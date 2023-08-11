@@ -149,6 +149,21 @@ class ArithmeticTests extends FlatSpec with Matchers with BeforeAndAfterAll {
     }
   }
 
+  it should "generate correct trees when the coarse tree has a forced leaf at the end" in {
+    val coar5 = Truncation(Vector(NodeLabel(4), NodeLabel(5), NodeLabel(6), NodeLabel(7)))
+    val fine5 = Truncation(Vector(NodeLabel(8), NodeLabel(9), NodeLabel(10), NodeLabel(11), NodeLabel(12), NodeLabel(13)))
+    val union5 = rpUnionNested(fine5, coar5).leaves
+    assert(union5.length == 7)
+    assert(union5(0) == NodeLabel(8))
+    assert(union5(1) == NodeLabel(9))
+    assert(union5(2) == NodeLabel(10))
+    assert(union5(3) == NodeLabel(11))
+    assert(union5(4) == NodeLabel(12))
+    assert(union5(5) == NodeLabel(13))
+    assert(union5(6) == NodeLabel(7))
+
+  }
+
   "mrpTransform" should "be a pointwise transformation" in {
     val trunc = Truncation(Vector(8,9,10,11,3).map(NodeLabel(_)))
     val vals = Vector(1,2,3,4,5)

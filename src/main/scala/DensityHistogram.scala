@@ -52,7 +52,7 @@ case class DensityHistogram(tree: SpatialTree, densityMap: LeafMap[(Double, Volu
    * @param v - The point at which we wish to determine the density.
    * @return The density at v.
    */
-  def density(v: MLVector): Probability = {
+  def density(v: MLVector): Double = {
     val point = v.toArray
     for (i <- 0 until point.length) {
       if (point(i) < tree.rootCell.low(i) || point(i) > tree.rootCell.high(i)) {
@@ -209,7 +209,7 @@ object HistogramFunctions {
         NodeLabel(newDirections.reverse.foldLeft(BigInt(1)){ case (labAcc, i) => (labAcc << 1) + i })
       } 
       (newRec, (newLabel, newDensity, newVol))
-    }.map{ case(rec, (lab, dens, vol)) => (lab, (dens: Probability, vol)) }
+    }.map{ case(rec, (lab, dens, vol)) => (lab, (dens: Double, vol)) }
 
     val margTree = widestSideTreeRootedAt(marginalizeRectangle(densTree.rootCell, axesToKeep))
 
@@ -279,10 +279,12 @@ object HistogramFunctions {
     DensityHistogram(margTree, fromNodeLabelMap(margMap))
   }
 
+  @deprecated("Use faster quickSlice")
   def slice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoints: Vector[Double]): DensityHistogram = {
     slice(densHist, sliceAxes, Vectors.dense(slicePoints.toArray))
   }
 
+  @deprecated("Use faster quickSlice")
   def slice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoints: MLVector): DensityHistogram = {
     
     val sliceBoxes = densHist.densityMap.leaves.map( node => 
@@ -322,7 +324,7 @@ object HistogramFunctions {
     DensityHistogram(slicedTree, fromNodeLabelMap(slicedNodeMap))
   }
 
-  def quickSlice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoint: Vector[Double], splitOrder : Array[Axis], sliceLeavesBufC : Array[NodeLabel] = null, sliceValuesBufC : Array[(Probability,Volume)] = null) : DensityHistogram = {
+  def quickSlice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoint: Vector[Double], splitOrder : Array[Axis], sliceLeavesBufC : Array[NodeLabel] = null, sliceValuesBufC : Array[(Double,Volume)] = null) : DensityHistogram = {
     quickSlice(densHist, sliceAxes, Vectors.dense(slicePoint.toArray), splitOrder, sliceLeavesBufC, sliceValuesBufC)
   }
 
@@ -342,7 +344,7 @@ object HistogramFunctions {
    * @return The conditional (non-normalised) histogram on If the slice point was found to be within at least one leaf. If no 
    *              no leaf was sliced, return null.
    */
-  def quickSlice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoint: MLVector, splitOrder : Array[Axis], sliceLeavesBufC : Array[NodeLabel], sliceValuesBufC : Array[(Probability,Volume)]) : DensityHistogram = {
+  def quickSlice(densHist: DensityHistogram, sliceAxes: Vector[Axis], slicePoint: MLVector, splitOrder : Array[Axis], sliceLeavesBufC : Array[NodeLabel], sliceValuesBufC : Array[(Double,Volume)]) : DensityHistogram = {
 
     /* Check if slice point is within possible slice region */
     for (i <- 0 until sliceAxes.length) {
@@ -494,8 +496,8 @@ object HistogramFunctions {
   }
 }
 
-case class CollatedHistogram[K](tree: SpatialTree, densities: LeafMap[Map[K, (Probability, Volume)]]) {
-  private type MapType = Map[K, (Probability, Volume)]
+case class CollatedHistogram[K](tree: SpatialTree, densities: LeafMap[Map[K, (Double, Volume)]]) {
+  private type MapType = Map[K, (Double, Volume)]
 
   val keySet = densities.vals.head.keySet
 

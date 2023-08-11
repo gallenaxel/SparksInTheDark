@@ -274,6 +274,7 @@ object TruncationFunctions {
   }
   import DropHead._
 
+  @deprecated("Use faster rpUnionNested, avoids unnecessary memory allocations")
   def rpUnionNestedPrime(finer: Truncation, coarser: Truncation): Truncation = {
 
     val ascsAndDescs = coarser.leaves.map( leaf => leaf -> finer.leaves.filter(maybeDesc => isAncestorOf(leaf, maybeDesc)) )
@@ -356,7 +357,7 @@ object TruncationFunctions {
     while (coarseIndex < coarser.leaves.length) {
 
       val ss = finer.subtree(coarser.leaves(coarseIndex))
-      if (coarser.leaves(coarseIndex) == finer.leaves(fineIndex)) {
+      if (fineIndex < finer.leaves.length && coarser.leaves(coarseIndex) == finer.leaves(fineIndex)) {
         union(unionIndex) = finer.leaves(fineIndex)
         fineIndex += 1
         unionIndex += 1

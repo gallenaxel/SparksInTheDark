@@ -80,6 +80,27 @@ case class TailProbabilities(tree : SpatialTree, tails : LeafMap[Probability]) e
       case (_, Some(p)) => p
     }
   }
+
+  /**
+   * confidenceRegion - Retrieve the probability of the smallest coverage region with probability >= wantedConfidence.
+   *                  Thus, if one wants a confidence region of 95% confidence, the function returns the smallest confidence
+   *                  region in TailsProbabilities with confidence >= wantedConfidence.
+   *
+   * @param wantedConfidence - Minimum allowed confidence of the confidence region whose probability is returned.
+   * @return The probability of the smallest confidence region with at least wantedConfidence probability.
+   */
+  def confidenceRegion(wantedConfidence : Double) : Double = {
+    
+    assert(0.0 <= wantedConfidence && wantedConfidence <= 1.0)
+
+    var minProb : Double = 1.0
+    for (i <- 0 until tails.vals.length) {
+      if (tails.vals(i) >= wantedConfidence && tails.vals(i) < minProb) {
+        minProb = tails.vals(i)
+      }
+    }
+    minProb
+  }
 }
 
 /**
@@ -360,7 +381,7 @@ case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Co
     }
 
 
-
+  @deprecated("Use faster backtrackNumSteps, avoids unnecessary histogram allocations")
   def backtrackWithNodes[H](prio : PriorityFunction[H])(implicit ord : Ordering[H]) : (Stream[(H, NodeLabel)], Stream[Histogram]) = {
     val start = counts.cherries(_+_).map {
       case (lab, c) => (prio(lab, c, tree.volumeAt(lab)), lab)
@@ -396,6 +417,7 @@ case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Co
     (intermediate.map { case (prio, lab, _) => (prio, lab) }, this #:: intermediate.map { case (_, _, h) => h })
   }
 
+  @deprecated("Use faster backtrackNumSteps, avoids unnecessary histogram allocations")
   def backtrackToWithNodes[H](prio : PriorityFunction[H], hparent : Histogram)(implicit ord : Ordering[H])
       : (Stream[(H, NodeLabel)], Stream[Histogram]) = {
 
@@ -459,17 +481,21 @@ case class Histogram(tree : SpatialTree, totalCount : Count, counts : LeafMap[Co
     (intermediate.map { case (prio, lab, _) => (prio, lab) }, this #:: intermediate.map { case (_, _, h) => h })
   }
 
+  @deprecated("Use faster backtrackNumSteps, avoids unnecessary histogram allocations")
   def backtrackNodes[H](prio : PriorityFunction[H])(implicit ord : Ordering[H])
       : Stream[NodeLabel] =
     backtrackWithNodes(prio)(ord)._1.map(_._2)
 
+  @deprecated("Use faster backtrackNumSteps, avoids unnecessary histogram allocations")
   def backtrack[H](prio : PriorityFunction[H])(implicit ord : Ordering[H])
       : Stream[Histogram] =
     backtrackWithNodes(prio)(ord)._2
 
+  @deprecated("Use faster backtrackNumSteps, avoids unnecessary histogram allocations")
   def backtrackToNodes[H](prio : PriorityFunction[H], hparent : Histogram)(implicit ord : Ordering[H]) : Stream[NodeLabel] =
     backtrackToWithNodes(prio, hparent)(ord)._1.map(_._2)
 
+  @deprecated("Use faster backtrackNumSteps, avoids unnecessary histogram allocations")
   def backtrackTo[H](prio : PriorityFunction[H], hparent : Histogram)(implicit ord : Ordering[H]) : Stream[Histogram] =
     backtrackToWithNodes(prio, hparent)(ord)._2
 }

@@ -16,7 +16,9 @@
 
 package co.wiklund.disthist
 
-import scala.util.Random
+import org.apache.commons.rng.UniformRandomProvider;
+import org.apache.commons.rng.simple.RandomSource;
+
 import scala.collection.mutable.HashMap
 import scala.collection.mutable.PriorityQueue
 import scala.math.{max,floor,round,exp,log,log10,pow}
@@ -54,12 +56,12 @@ import org.apache.spark.rdd.RDD
    *
    *                      It follows that every generated subtree's weight represents the estimated work that it will take to merge cells within the subtree. After the
    *                      subtrees have been generated, the Partitioner creates a HashMap that maps every subtree or subtrees with no representation (no sampled points found
-   *                      in the subtree) to individual partitions which should reign over the subtrees' data points. The subtrees are assigned to partitions in such a manner
-   *                      to minimize the weight of the heaviest partition. This is done by the simple approximation algorithm in which you iteratively assign the heaviest
-   *                      or most costly object to the partition or machine with the lowest load until all objects have been assigned. 
+   *                      in the subtree) to individual partitions which should reign over all data points found in the subtrees. The subtrees are assigned to partitions 
+   *                      in such a manner to minimize the weight of the heaviest partition. This is done by the simple approximation algorithm in which you iteratively 
+   *                      assign the heaviest or most costly object to the partition or machine with the lowest load until all objects have been assigned. 
    *
    * @param partitions - The number of wanted partitions when partitioning using the Partitioner
-   * @param rdd - RDD contain cell (NodeLabel, Count) daa
+   * @param rdd - RDD containing cells (NodeLabel, Count)
    * @param samplePointsPerPartitionHint - The sampleSize roughly used per new partition. The total sample size to estimate
    *    data distribution among subtrees of the data to base the Partitioning scheme on can be estimated to be 
    *    c * hint * numPartitions where 1 <= c <= 3.
@@ -176,11 +178,19 @@ object SubtreePartitionerFunctions {
   * reservoirSamplingLAndCount - Implementation of Reservoir Sampling algorithm L, [Reservoir-sampling algorithms of time complexity O(n(1+log(N/n))), Kim-Hung Li].
   * @param iter - The iterator over the leaves from which we wish to sample
   * @param sampleSize - The sample size
-  * @param seed - The seed 
+  * @param seed - The seed [Optional]
   * @return an iterator containing the generated sample and the length of the input
   */
-  def reservoirSamplingLAndCount(iter : Iterator[NodeLabel], sampleSize : Int, seed : Long = Random.nextLong()) : (Array[NodeLabel], Long) = {
-    val random = new Random(seed)
+  def reservoirSamplingLAndCount(iter : Iterator[NodeLabel], sampleSize : Int, seed : Long) : (Array[NodeLabel], Long) = {
+    val rng : UniformRandomProvider = RandomSource.XO_RO_SHI_RO_128_PP.create(seed)
+    reservoirSamplingLAndCount(iter, sampleSize, rng)
+  }
+
+  def reservoirSamplingLAndCount(iter : Iterator[NodeLabel], sampleSize : Int) : (Array[NodeLabel], Long) = {
+    val rng : UniformRandomProvider = RandomSource.XO_RO_SHI_RO_128_PP.create()
+    reservoirSamplingLAndCount(iter, sampleSize, rng)
+  }
+  def reservoirSamplingLAndCount(iter : Iterator[NodeLabel], sampleSize : Int, rng : UniformRandomProvider) : (Array[NodeLabel], Long) = {
     var sample : Array[NodeLabel] = new Array(sampleSize)
     var len : Long = 0
     var i = 0
@@ -199,12 +209,12 @@ object SubtreePartitionerFunctions {
     var continue = true
     var rem = iter
     while (continue) {
-      W = W * exp(log(random.nextDouble)/sampleSize)
-      val S = floor(log(random.nextDouble)/log(1-W)).toInt
+      W = W * exp(log(rng.nextDouble)/sampleSize)
+      val S = floor(log(rng.nextDouble)/log(1-W)).toInt
       rem = rem.drop(S)
       len += S
       if (rem.hasNext) {
-        sample(random.nextInt(sampleSize)) = rem.next 
+        sample(rng.nextInt(sampleSize)) = rem.next 
         len += 1
       } else {
         continue = false 

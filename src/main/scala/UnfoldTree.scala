@@ -20,6 +20,7 @@ import Types._
 
 import NodeLabelFunctions._
 
+@deprecated("Class not used anywhere")
 case class CachedUnfoldTree[A]( base : A,
                                 cache : Map[NodeLabel, A],
                                 left : (NodeLabel, A) => A,
