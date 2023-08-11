@@ -517,9 +517,6 @@ object MDEFunctions {
     val bestHistogram = backtrackedHist(mdeIndex)
     val largerThanBest = if (mdeIndex < backtrackedHist.length - 1) backtrackedHist(mdeIndex + 1) else backtrackedHist.last
     
-    if (verbose && bestHistogram.counts.leaves.length == largerThanBest.counts.leaves.length)
-      println("WARNING: best histogram is the largest, consider larger larger starting histogram!")
-
     (bestHistogram, largerThanBest, mergedValidationData)
   }
 
@@ -578,6 +575,10 @@ object MDEFunctions {
     var largest = result._2
     var mergedValidationData = result._3
     var sizeDiff = largest.counts.leaves.length - best.counts.leaves.length
+    if (verbose && sizeDiff == 0) {
+      println("WARNING: best histogram is the largest, consider larger starting histogram!")
+    }
+
 
     while (sizeDiff > k/2) {
       if (verbose) println(s"----- Current size difference: $sizeDiff -----")
