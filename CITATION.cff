@@ -2,7 +2,8 @@
 # Visit https://bit.ly/cffinit to generate yours today!
 
 cff-version: 1.2.0
-title: SparkDensityTree
+title: SparkDensityTree: An Apache Spark Library for Scalable Density Estimation, Anomaly Detection and Conditional Density Regression with 
+  Universal Performance Guarantees Using Distributed Sparse Binary Trees
 message: >-
   If you use this software, please cite it using the
   metadata from this file.
@@ -25,7 +26,8 @@ repository-code: 'https://github.com/lamastex/SparkDensityTree'
 abstract: >-
   This is the library based on Scala and Apache Spark for Scalable 
   Density Estimation, Anomaly Detection and Conditional Density Regression with 
-  Universal Performance Guarantees. The order of authorship is reverse chronological.
+  Universal Performance Guarantees Using Distributed Sparse Binary Trees. 
+  The order of authorship is reverse chronological.
 keywords:
   - nonparametric density estimation
   - nonparametric anomaly detection
