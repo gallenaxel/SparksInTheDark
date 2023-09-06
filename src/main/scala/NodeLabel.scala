@@ -1,5 +1,5 @@
 /**************************************************************************
- * Copyright 2017 Tilo Wiklund, 2022 Johannes Graner
+ * Copyright 2017 Tilo Wiklund, 2022 Johannes Graner, 2023 Axel Sandstedt 
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
