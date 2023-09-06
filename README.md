@@ -1,10 +1,9 @@
 # SparkDensityTree
 
-Currently alpha-level, but usable (documentation upcoming). 
+This project aims to develop a nonparamteric density estimator with universal performance guarantees using distributed sparse binary trees.
 
-This project aims to extend a fast tree-based nonparamteric density estimator in  
-[Data Adaptive Histograms for Statistical Regular Pavings](http://lamastex.org/preprints/20161121optMAPMDE.pdf) 
-into the distributed fault-tolerant setting provided by Apache Spark. 
+Original ideas from [Data Adaptive Histograms for Statistical Regular Pavings](http://lamastex.org/preprints/20161121optMAPMDE.pdf) 
+have been extended into the distributed fault-tolerant setting provided by Apache Spark. 
 A preprint of this work in:
 
 - [http://lamastex.org/preprints/20180506_SparkDensityTree.pdf](http://lamastex.org/preprints/20180506_SparkDensityTree.pdf) 
@@ -23,7 +22,7 @@ The PR at 15th of June 2023 by Axel Sandstedt for his Masters thesis work involv
 
 - **TODO**: link to thesis when uploaded
 
-PRs between 13th of July and 13th of September was supported by Combient Mix AB through 2023 summer internship in Data Engineering Sciences to Axel Sandstedt.
+PRs between 13th of July and 13th of September were supported by Combient Mix AB through 2023 summer internship in Data Engineering Sciences to Axel Sandstedt.
 
 ## Support
 
