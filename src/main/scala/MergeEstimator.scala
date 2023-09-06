@@ -82,6 +82,23 @@ object MergeEstimatorFunctions {
     points.mapPartitions(iter => tree.quickDescend(iter, depth)).map(n => (n,1L)).reduceByKey((v1, v2) => v1 + v2)
   }
 
+  /**
+   * quickToLabeledNoReduce - Quick labeling function of datapoints without reduceByKey operation (Unecessary for validation data).
+   * 
+   * @param tree - Root Regular Paving 
+   * @param depth - The depth to split down to and determine the label
+   * @param points - The points to label and count
+   * @return A RDD containing cell NodeLabels for cells with non-zero counts. Every NodeLabel occurs only once
+   *         with the count set as the number of points found within the cell.
+   */
+  def quickToLabeledNoReduce(tree: WidestSplitTree, depth: Int, points: RDD[MLVector]): RDD[(NodeLabel, Count)] = {
+    val spark = getSpark
+    import spark.implicits._
+
+    require(depth > 0)
+    points.mapPartitions(iter => tree.quickDescend(iter, depth)).map(n => (n,1L))
+  }
+
   def getTree[A](tree: SpatialTree)(f: SpatialTree => A) = f(tree)
 
   @deprecated("Use subtree partitioning based strategy mergeLeavesRDD or mergeLeavesHistogram")
