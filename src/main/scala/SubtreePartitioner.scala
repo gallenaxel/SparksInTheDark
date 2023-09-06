@@ -114,7 +114,8 @@ class SubtreePartitioner(partitions : Int, rdd : RDD[(NodeLabel, Count)], val sa
           val weight = (1.0 / fraction).toFloat
           candidates ++= reSampled.map(x => (x, weight))
         }
-        val weightLimit : Float = candidates.length.toFloat / partitions
+        //val weightLimit : Float = candidates.length.toFloat / partitions
+        val weightLimit : Float = candidates.map(_._2).reduce(_+_) / partitions
         val maxSubtrees = maximalWeightSubtreeGeneration(candidates.sorted.toVector, weightLimit)
         maxSubtrees
       }
