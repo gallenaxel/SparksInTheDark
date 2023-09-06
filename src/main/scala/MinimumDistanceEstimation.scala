@@ -84,6 +84,7 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.util.LongAccumulator
 import org.apache.spark.sql.{ SparkSession }
 import org.apache.spark.rdd.RDD
+import org.apache.spark.storage.StorageLevel
 
 import Types._
 import HistogramUtilityFunctions._
@@ -396,6 +397,8 @@ object MDEFunctions {
    * @param validationCount - The total count of the validation data
    * @param k - The number of histogram estimates to compare
    * @param stopSize - Roughly the size of the most coarse histogram to consider
+   * @param numCores - Number of cores which reduceByKey will use as number of partitions (data will be super small after call, many partitions create very big overhead)
+   * @param reduce - Should apply reduceByKey after scheffe set calculations (Usually only done in first iteration)
    * @param verbose - Verbose output of process
    * @return The best histogram, the finest histogram in the next iterations search range, and the mergedValidationData RDD
    *         to be used in the next iteration.
@@ -406,6 +409,8 @@ object MDEFunctions {
     validationCount : Count,
     k: Int, 
     stopSize: Option[Int] = None, 
+    numCores : Int, 
+    reduce : Boolean,
     verbose: Boolean = false
   ): (Histogram, Histogram, RDD[(NodeLabel, Count)]) = {
     val spark = getSpark
@@ -469,11 +474,19 @@ object MDEFunctions {
     }
 
     if (verbose) println("--- Calculating empirical measure over Scheffe sets ---")
-    val mergedValidationData = validationData.mapPartitions(iter => scheffeSetsValidationCount(crpLeaves, iter, maxDepth, scheffeCountAccumulators)).cache
+
+    
+    val broadcastCrpLeaves = spark.sparkContext.broadcast(crpLeaves)
+    val mergedValidationData = reduce match {
+      case true => validationData.mapPartitions(iter => scheffeSetsValidationCount(broadcastCrpLeaves.value, iter, maxDepth, scheffeCountAccumulators)).reduceByKey((v1, v2) => v1 + v2, numPartitions = numCores)
+                                                          .mapPartitions(_.toArray.sortBy(t => t._1)(leftRightOrd).toIterator).persist(StorageLevel.MEMORY_AND_DISK)
+      case false => validationData.mapPartitions(iter => scheffeSetsValidationCount(broadcastCrpLeaves.value, iter, maxDepth, scheffeCountAccumulators)).persist(StorageLevel.MEMORY_AND_DISK)
+    }
 
     /* TODO: Force action to be taken before checking accumulators! Can this be done in a faster way than count? */
     mergedValidationData.count
     validationData.unpersist()
+    broadcastCrpLeaves.unpersist()
 
     var scheffeEmpiricals : Array[Array[Double]] = Array.ofDim[Double](h,h)
     for (i <- 0 until h) {
@@ -554,6 +567,7 @@ object MDEFunctions {
    * @param validationData - The validation data to be used in finding a MDE in each search iteration.
    * @param validationCount - The total count of the validation data
    * @param k - The number of histograms to consider every iteration
+   * @parma numCores - The number of cores of the cluster (reduceByKey will need this)
    * @param verbose - Verbose printing of process
    *
    * @return The final non-normalized MDE from the whole adaptive search.
@@ -563,14 +577,17 @@ object MDEFunctions {
     validationData: RDD[(NodeLabel, Count)], 
     validationCount: Count, 
     k: Int, 
+    numCores : Int,
     verbose: Boolean = false
   ): Histogram = {
     var stopSize = Option.empty[Int]
+    val reduce = true
+    val noReduce = false
 
     if (verbose) println(s"----- Starting MDE search with step size $k and total leaf count ${hist.counts.leaves.length} -----")
 
     var result : (Histogram, Histogram, RDD[(NodeLabel,Count)]) =
-      mdeStep(hist, validationData.mapPartitions(_.toArray.sortBy(t => t._1)(leftRightOrd).toIterator), validationCount, k, stopSize, verbose)
+      mdeStep(hist, validationData.mapPartitions(_.toArray.sortBy(t => t._1)(leftRightOrd).toIterator), validationCount, k, stopSize, numCores, reduce, verbose)
     var best = result._1
     var largest = result._2
     var mergedValidationData = result._3
@@ -583,7 +600,7 @@ object MDEFunctions {
     while (sizeDiff > k/2) {
       if (verbose) println(s"----- Current size difference: $sizeDiff -----")
       stopSize = Some(largest.counts.leaves.length - 2 * sizeDiff)
-      result = mdeStep(largest, mergedValidationData, validationCount, k, stopSize, verbose)
+      result = mdeStep(largest, mergedValidationData, validationCount, k, stopSize, numCores, noReduce, verbose)
       best = result._1
       largest = result._2
       mergedValidationData = result._3
@@ -593,7 +610,7 @@ object MDEFunctions {
     if (sizeDiff > 1) {
       if (verbose) println(s"----- Final step with size difference $sizeDiff -----")
       stopSize = Some(largest.counts.leaves.length - 2 * sizeDiff)
-      result = mdeStep(largest, mergedValidationData, validationCount, sizeDiff * 2 + 1, stopSize, verbose)
+      result = mdeStep(largest, mergedValidationData, validationCount, sizeDiff * 2 + 1, stopSize, numCores, noReduce, verbose)
       best = result._1
       largest = result._2
       mergedValidationData = result._3

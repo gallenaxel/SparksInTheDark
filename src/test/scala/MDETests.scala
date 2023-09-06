@@ -387,7 +387,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
 
     val k = kInMDE
     var result : (Histogram, Histogram, RDD[(NodeLabel,Count)]) =
-      mdeStep(merged, countedTest.mapPartitions(_.toArray.sortBy(t => t._1)(leftRightOrd).toIterator), trainSize/2, k, stopSize, verbose)
+      mdeStep(merged, countedTest.mapPartitions(_.toArray.sortBy(t => t._1)(leftRightOrd).toIterator), trainSize/2, k, stopSize, 4, verbose)
     var best = result._1
     var largest = result._2
     var mergedValidationData = result._3
@@ -398,7 +398,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     while (sizeDiff > k/2) {
       if (verbose) println(s"----- Current size difference: $sizeDiff -----")
       stopSize = Some(largest.counts.leaves.length - 2 * sizeDiff)
-      result = mdeStep(largest, mergedValidationData, trainSize/2, k, stopSize, verbose)
+      result = mdeStep(largest, mergedValidationData, trainSize/2, k, stopSize, 4, verbose)
       correct = getValHist(largest, mergedValidationData, k, stopSize)
       best = result._1
       largest = result._2
@@ -410,7 +410,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
     if (sizeDiff > 1) {
       if (verbose) println(s"----- Final step with size difference $sizeDiff -----")
       stopSize = Some(largest.counts.leaves.length - 2 * sizeDiff)
-      result = mdeStep(largest, mergedValidationData, trainSize/2, sizeDiff * 2 + 1, stopSize, verbose)
+      result = mdeStep(largest, mergedValidationData, trainSize/2, sizeDiff * 2 + 1, stopSize, 4, verbose)
       correct = getValHist(largest, mergedValidationData, sizeDiff * 2 + 1, stopSize)
       best = result._1
       largest = result._2
@@ -442,7 +442,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
         (NodeLabel(24), 5),
       ), 4)
     val validationCount1 = 45
-    var result1 : (Histogram, Histogram, RDD[(NodeLabel,Count)]) = mdeStep(hist, validationData1.mapPartitions(_.toArray.sortBy(t => t._1)(leftRightOrd).toIterator), validationCount1, k, stopSize, verbose)
+    var result1 : (Histogram, Histogram, RDD[(NodeLabel,Count)]) = mdeStep(hist, validationData1.mapPartitions(_.toArray.sortBy(t => t._1)(leftRightOrd).toIterator), validationCount1, k, stopSize, 4, verbose)
     var mergedValidationData1 = result1._3.reduceByKey(_+_).collect.sortBy(_._1)
     assert(mergedValidationData1(0)._1 == NodeLabel(16) && mergedValidationData1(0)._2 == 10)
     assert(mergedValidationData1(1)._1 == NodeLabel(17) && mergedValidationData1(1)._2 == 5)
@@ -469,7 +469,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
         (NodeLabel(63), 10),
       ), 8)
     val validationCount2 = 105
-    var result2 : (Histogram, Histogram, RDD[(NodeLabel,Count)]) = mdeStep(hist, validationData2.mapPartitions(_.toArray.sortBy(t => t._1)(leftRightOrd).toIterator), validationCount2, k, stopSize, verbose)
+    var result2 : (Histogram, Histogram, RDD[(NodeLabel,Count)]) = mdeStep(hist, validationData2.mapPartitions(_.toArray.sortBy(t => t._1)(leftRightOrd).toIterator), validationCount2, k, stopSize, 4, verbose)
     var mergedValidationData2 = result2._3.reduceByKey(_+_).collect.sortBy(_._1)
     assert(mergedValidationData2(0)._1 == NodeLabel(20) && mergedValidationData2(0)._2 == 5)
     assert(mergedValidationData2(1)._1 == NodeLabel(24) && mergedValidationData2(1)._2 == 5)
@@ -493,7 +493,7 @@ class MDETests extends FlatSpec with Matchers with BeforeAndAfterAll {
         (NodeLabel(24), 5),
       ), 2)
     val validationCount3  = 85
-    var result3 : (Histogram, Histogram, RDD[(NodeLabel,Count)]) = mdeStep(hist, validationData3.mapPartitions(_.toArray.sortBy(t => t._1)(leftRightOrd).toIterator), validationCount3, k, stopSize, verbose)
+    var result3 : (Histogram, Histogram, RDD[(NodeLabel,Count)]) = mdeStep(hist, validationData3.mapPartitions(_.toArray.sortBy(t => t._1)(leftRightOrd).toIterator), validationCount3, k, stopSize, 4, verbose)
     var mergedValidationData3 = result3._3.reduceByKey(_+_).collect.sortBy(_._1)
     assert(mergedValidationData3(0)._1 == NodeLabel(20) && mergedValidationData3(0)._2 == 5)
     assert(mergedValidationData3(2)._1 == NodeLabel(22) && mergedValidationData3(2)._2 == 25)
