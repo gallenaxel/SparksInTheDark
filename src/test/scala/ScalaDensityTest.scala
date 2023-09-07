@@ -134,6 +134,7 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
       countedValidation, 
       trainSize/2,
       kInMDE, 
+      4,
       false 
     )).normalize
 
@@ -1036,6 +1037,7 @@ class DensityTests extends FlatSpec with Matchers with BeforeAndAfterAll {
       countedTest, 
       trainSize/2,
       kInMDE, 
+      4,
       true 
     )).normalize
 

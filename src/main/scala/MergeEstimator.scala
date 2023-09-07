@@ -1,5 +1,5 @@
 /**************************************************************************
- * Copyright 2022 Johannes Graner
+ * Copyright 2022 Johannes Graner, 2023 Axel Sandstedt
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@ import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.util.LongAccumulator
 
 import org.apache.hadoop.yarn.webapp.hamlet.HamletSpec.P
+
+import scala.math.{ max }
 
 import Types._
 import LeafMapFunctions._
@@ -66,6 +68,23 @@ object MergeEstimatorFunctions {
   }
 
   /**
+   * getCountLimit - Finds the maximum count within the leaves of the given RDD and returns a count limit at least as large as the
+   *                 input limit. This method exists because it may be unreasonable for the user to provide a depth for which all
+   *                 leaves at the depth have count less than or equal to the minimum count limit given. Instead, a much more sane 
+   *                 approach is for the user to decide on a depth, and if that depth happens to generate leaves with counts larger
+   *                 than the wanted count limit provided, the user should be able to continue on anyway with the count maximum as
+   *                 the new limit.
+   *
+   * @param labeledRDD - RDD of uniquely labeled leaves
+   * @param minimumCountLimit - The count limit returned if no leaf contains a count larger than it
+   * @returns A countLimit which is admissible for the data.
+   */
+  def getCountLimit(labeledRDD : RDD[(NodeLabel, Count)], minimumCountLimit : Long) : Count = {
+    val maxLeafCount : Count = labeledRDD.map(_._2).reduce(max(_,_))
+    max(minimumCountLimit, maxLeafCount)
+  }
+
+  /**
    * quickToLabeled - Quick labeling function of datapoints.
    * 
    * @param tree - Root Regular Paving 
@@ -80,6 +99,23 @@ object MergeEstimatorFunctions {
 
     require(depth > 0)
     points.mapPartitions(iter => tree.quickDescend(iter, depth)).map(n => (n,1L)).reduceByKey((v1, v2) => v1 + v2)
+  }
+
+  /**
+   * quickToLabeledNoReduce - Quick labeling function of datapoints without reduceByKey operation (Unecessary for validation data).
+   * 
+   * @param tree - Root Regular Paving 
+   * @param depth - The depth to split down to and determine the label
+   * @param points - The points to label and count
+   * @return A RDD containing cell NodeLabels for cells with non-zero counts. Every NodeLabel occurs only once
+   *         with the count set as the number of points found within the cell.
+   */
+  def quickToLabeledNoReduce(tree: WidestSplitTree, depth: Int, points: RDD[MLVector]): RDD[(NodeLabel, Count)] = {
+    val spark = getSpark
+    import spark.implicits._
+
+    require(depth > 0)
+    points.mapPartitions(iter => tree.quickDescend(iter, depth)).map(n => (n,1L))
   }
 
   def getTree[A](tree: SpatialTree)(f: SpatialTree => A) = f(tree)
