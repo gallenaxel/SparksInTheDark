@@ -23,9 +23,9 @@ authors:
     orcid: 'https://orcid.org/0000-0003-3265-5565'
 repository-code: 'https://github.com/lamastex/SparkDensityTree'
 abstract: >-
-  This is the library based on Scala and Apache Spark for Scalable 
-  Density Estimation, Anomaly Detection and Conditional Density Regression with 
-  Universal Performance Guarantees Using Distributed Sparse Binary Trees. 
+  This is the library based on Scala and Apache Spark for scalable 
+  density estimation, anomaly detection and conditional density regression with 
+  universal performance guarantees through distributed sparse binary trees. 
   The order of authorship is reverse chronological.
 keywords:
   - nonparametric density estimation
