@@ -2,8 +2,7 @@
 # Visit https://bit.ly/cffinit to generate yours today!
 
 cff-version: 1.2.0
-title: "SparkDensityTree: An Apache Spark Library for Scalable Density Estimation, Anomaly Detection and Conditional Density Regression with 
-  Universal Performance Guarantees Using Distributed Sparse Binary Trees"
+title: "SparkDensityTree: An Apache Spark library for scalable density estimation, anomaly detection and conditional density regression with universal performance guarantees through distributed sparse binary trees"
 message: >-
   If you use this software, please cite it using the
   metadata from this file.
